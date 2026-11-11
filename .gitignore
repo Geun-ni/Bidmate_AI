@@ -6,3 +6,6 @@ __pycache__/
 *.py[cod]
 node_modules/
 dist/
+
+*.sqlite3
+*.sqlite3-*
