@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>입찰메이트</title>
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="wrap topbar-inner">
+      <span class="brand">입찰메이트</span>
+      <span class="demo-label">가상 데이터 데모</span>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <h1>맞춤 입찰 공고</h1>
+    <p id="status" role="status">공고를 불러오는 중입니다.</p>
+    <section id="company" class="panel company" aria-labelledby="company-title" hidden>
+      <h2 id="company-title"></h2>
+      <dl id="company-criteria" class="criteria"></dl>
+    </section>
+
+    <div id="workspace" class="workspace" hidden>
+      <section class="panel notice-list" aria-labelledby="list-title">
+        <h2 id="list-title">추천 공고 <span id="notice-count" class="count"></span></h2>
+        <ul id="notices"></ul>
+      </section>
+
+      <article id="detail" class="panel detail" aria-labelledby="notice-title">
+        <header class="notice-header">
+          <p id="notice-meta" class="meta"></p>
+          <h2 id="notice-title"></h2>
+        </header>
+        <section class="detail-section" aria-labelledby="reason-title">
+          <h3 id="reason-title">추천 사유</h3>
+          <ul id="reasons" class="reasons"></ul>
+        </section>
+        <section class="detail-section" aria-labelledby="summary-title">
+          <h3 id="summary-title">공고 요약</h3>
+          <dl id="summary" class="summary"></dl>
+        </section>
+        <section class="detail-section" aria-labelledby="documents-title">
+          <div class="section-heading">
+            <h3 id="documents-title">제출서류 체크리스트</h3>
+            <span id="progress" class="count" aria-live="polite"></span>
+          </div>
+          <ul id="documents" class="documents"></ul>
+        </section>
+      </article>
+    </div>
+  </main>
+
+  <footer class="wrap">
+    참고용 서비스이며 법적 효력이 없습니다. 최종 확인은 공고 원문과 발주처 기준에 따릅니다.
+  </footer>
+</body>
+</html>
