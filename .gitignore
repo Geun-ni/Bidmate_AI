@@ -1,11 +1,25 @@
+# 환경 변수 및 보안 키
 .env
 .env.*
 !.env.example
+
+# 가상 환경 및 파이썬 부산물
 .venv/
 __pycache__/
 *.py[cod]
+
+# 프론트엔드 및 빌드 디렉토리
 node_modules/
 dist/
 
+# 데이터베이스
 *.sqlite3
 *.sqlite3-*
+
+# 운영체제(OS) 부산물
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# IDE 설정 (VS Code)
+.vscode/
