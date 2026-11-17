@@ -18,10 +18,13 @@ COMMON = "smartsuit.ui.etnajs.cmmn.CommonController"
 
 
 def rpc(session, action, method, data, tid):
-    payload = [{"action": action, "method": method, "data": data,
-                "tid": tid, "type": "rpc"}]
+    payload = {"action": action, "method": method, "data": data,
+               "tid": tid, "type": "rpc"}
     res = session.post(BASE + "/router", json=payload, timeout=35,
-                       headers={"Accept": "application/json, text/javascript, */*"})
+                       headers={"Accept": "application/json, text/javascript, */*",
+                                "Content-Type": "application/json;charset=UTF-8"})
+    if res.status_code == 404:
+        raise RuntimeError("SRM /router에서 HTTP 404가 반환됐습니다. 브라우저와 세션 또는 요청 정책 차이를 확인해야 합니다.")
     res.raise_for_status()
     try:
         body = res.json()
