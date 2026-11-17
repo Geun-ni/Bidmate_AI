@@ -7,6 +7,7 @@ import argparse
 import json
 import re
 from datetime import date, timedelta
+from html.parser import HTMLParser
 from pathlib import Path
 
 import requests
@@ -15,6 +16,29 @@ BASE = "https://srm.kepco.net"
 SEARCH = "smartsuit.ui.etnajs.spt.joinpublicannouncement.sp.JoinPublicAnnounceController"
 DETAIL = "smartsuit.ui.etnajs.pro.rfx.sp.BidDetailController"
 COMMON = "smartsuit.ui.etnajs.cmmn.CommonController"
+
+
+class CsrfMetaParser(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.meta = {}
+
+    def handle_starttag(self, tag, attrs):
+        if tag == "meta":
+            fields = dict(attrs)
+            if fields.get("name") in ("_csrf", "_csrf_header"):
+                self.meta[fields["name"]] = fields.get("content", "")
+
+
+def configure_csrf(session, html):
+    parser = CsrfMetaParser()
+    parser.feed(html)
+    token = parser.meta.get("_csrf")
+    header = parser.meta.get("_csrf_header")
+    if not token or not header:
+        raise RuntimeError("index.do HTML에서 CSRF 토큰 또는 헤더 이름을 찾지 못했습니다.")
+    session.headers.update({header: token, "X-Requested-With": "XMLHttpRequest"})
+    print("  CSRF 토큰 자동 추출 성공 (값은 표시하지 않음)")
 
 
 def rpc(session, action, method, data, tid):
@@ -73,7 +97,9 @@ def main():
     session.headers.update({"User-Agent": "Mozilla/5.0",
                             "Referer": BASE + "/index.do", "Origin": BASE})
     print("[1/5] 공개 페이지 접속")
-    session.get(BASE + "/index.do", timeout=35).raise_for_status()
+    landing = session.get(BASE + "/index.do", timeout=35)
+    landing.raise_for_status()
+    configure_csrf(session, landing.text)
 
     print("[2/5] 공고번호 검색:", args.notice)
     end = date.today()
