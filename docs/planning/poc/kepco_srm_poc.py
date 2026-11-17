@@ -89,7 +89,6 @@ def records(value):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--notice", default="E012607925")
-    parser.add_argument("--filename", default="2. 적격심사기준.hwp")
     parser.add_argument("--days", type=int, default=365)
     args = parser.parse_args()
 
@@ -135,29 +134,50 @@ def main():
                               [{"groupId": group_id, "page": 1, "start": 0, "limit": 100}], 103))
     for attachment in attachments:
         print(" -", attachment.get("name", "(이름 없음)"))
-    target = next((item for item in attachments if item.get("name") == args.filename), None)
-    if not target or not target.get("id"):
-        raise RuntimeError("대상 파일이 첨부 목록에 없습니다.")
+    # 파일명에 공고문 또는 적격심사가 포함된 모든 첨부파일을 선택합니다.
+    keywords = ("공고문", "적격심사")
+    targets = [item for item in attachments
+               if isinstance(item.get("name"), str)
+               and any(word in re.sub(r"\\s+", "", item["name"]) for word in keywords)]
+    if not targets:
+        print("[안내] 공고문/적격심사 키워드가 포함된 첨부파일이 없습니다.")
+        return
 
-    print("[5/5] 파일 다운로드")
-    # id에 이미 %2F 등이 포함되어 있습니다. requests의 params가 %를 인코딩합니다.
-    res = session.get(BASE + "/downloadAttachment.do",
-                      params={"id": target["id"]}, timeout=60)
-    res.raise_for_status()
-    data = res.content
-    if "text/html" in res.headers.get("Content-Type", "").lower() or data.lstrip()[:20].lower().startswith((b"<html", b"<!doctype html")):
-        raise RuntimeError("파일 대신 HTML이 반환됐습니다. 세션/인증 확인 필요.")
-    if not data.startswith(bytes.fromhex("d0cf11e0a1b11ae1")):
-        raise RuntimeError("HWP 파일 시그니처가 아닙니다. 응답 앞부분: " + data[:24].hex())
-    expected = target.get("size")
-    if isinstance(expected, int) and len(data) != expected:
-        raise RuntimeError(f"파일 크기 불일치: 예상 {expected}, 실제 {len(data)}")
-    folder = Path("downloads")
-    folder.mkdir(exist_ok=True)
-    filename = re.sub(r'[\\/:*?"<>|]', "_", target["name"])
-    path = folder / filename
-    path.write_bytes(data)
-    print(f"[성공] {path.resolve()} ({len(data)} bytes)")
+    print(f"[5/5] 대상 파일 {len(targets)}개 다운로드")
+    folder = Path("downloads") / re.sub(r'[^0-9A-Za-z_-]', "_", args.notice)
+    folder.mkdir(parents=True, exist_ok=True)
+    success = 0
+    for target in targets:
+        filename = re.sub(r'[\\\\/:*?"<>|]', "_", target["name"])
+        print(" - 다운로드 시도:", filename)
+        try:
+            if not target.get("id"):
+                raise RuntimeError("다운로드 ID가 없습니다.")
+            # id의 %2F 등을 직접 재인코딩하지 않습니다.
+            res = session.get(BASE + "/downloadAttachment.do",
+                              params={"id": target["id"]}, timeout=60)
+            res.raise_for_status()
+            data = res.content
+            if "text/html" in res.headers.get("Content-Type", "").lower() or data.lstrip()[:20].lower().startswith((b"<html", b"<!doctype html")):
+                raise RuntimeError("파일 대신 HTML이 반환됐습니다.")
+            ext = Path(filename).suffix.lower()
+            if ext == ".hwp" and not data.startswith(bytes.fromhex("d0cf11e0a1b11ae1")):
+                raise RuntimeError("HWP 파일 형식이 아닙니다.")
+            if ext == ".pdf" and not data.startswith(b"%PDF-"):
+                raise RuntimeError("PDF 파일 형식이 아닙니다.")
+            if ext == ".hwpx" and not data.startswith(b"PK"):
+                raise RuntimeError("HWPX 파일 형식이 아닙니다.")
+            expected = target.get("size")
+            if isinstance(expected, int) and len(data) != expected:
+                raise RuntimeError(f"파일 크기 불일치: 예상 {expected}, 실제 {len(data)}")
+            destination = folder / filename
+            destination.write_bytes(data)
+            success += 1
+            print(f"   [성공] {destination} ({len(data)} bytes)")
+        except (requests.RequestException, RuntimeError) as exc:
+            print(f"   [실패] {filename}: {exc}")
+    print(f"[완료] {success}/{len(targets)}개 다운로드 성공")
+
 
 
 if __name__ == "__main__":
