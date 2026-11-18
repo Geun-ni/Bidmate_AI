@@ -23,3 +23,5 @@ Desktop.ini
 
 # IDE 설정 (VS Code)
 .vscode/
+# 수집기 다운로드 첨부파일
+downloads/
