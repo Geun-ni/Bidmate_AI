@@ -210,6 +210,20 @@ def collect_api_documents(db, row):
     return found
 
 
+def parse_restriction_item(category, item):
+    """SRM 투찰제한 응답 1행 → (code, name, area_code, sub_area_code, sub_area_name)."""
+    if category == "REGION":
+        return (item.get("areaCode"), item.get("areaCodeName"), item.get("areaCode"),
+                item.get("subAreaCode"), item.get("subAreaCodeName"))
+    if category == "QUALIFIED":
+        return (item.get("qualifiedQualificationCode"), item.get("qualifiedQualificationCodeName"), None, None, None)
+    if category == "LICENSE_MAIN":
+        return (item.get("licenseMainQualificationCode") or item.get("licenseQualificationCode"),
+                item.get("licenseMainQualificationCodeName") or item.get("licenseQualificationCodeName"),
+                None, None, None)
+    return (item.get("licenseQualificationCode"), item.get("licenseQualificationCodeName"), None, None, None)
+
+
 def collect_srm(db, srm, notice_no, found_kinds):
     """SRM 투찰제한 + (API에 없던) 공고문·적격심사기준 보완. SrmBlocked 는 호출자에게 전달."""
     t = now()
@@ -238,21 +252,9 @@ def collect_srm(db, srm, notice_no, found_kinds):
                        (notice_no, cat, str(exc)[:300], now()))
             continue
         for it in items[cat]:
-            if cat == "REGION":
-                values = (it.get("areaCode"), it.get("areaCodeName"), it.get("areaCode"),
-                          it.get("subAreaCode"), it.get("subAreaCodeName"))
-            elif cat == "QUALIFIED":
-                values = (it.get("qualifiedQualificationCode"), it.get("qualifiedQualificationCodeName"),
-                          None, None, None)
-            elif cat == "LICENSE_MAIN":
-                values = (it.get("licenseMainQualificationCode") or it.get("licenseQualificationCode"),
-                          it.get("licenseMainQualificationCodeName") or it.get("licenseQualificationCodeName"),
-                          None, None, None)
-            else:
-                values = (it.get("licenseQualificationCode"), it.get("licenseQualificationCodeName"),
-                          None, None, None)
             db.execute("""INSERT INTO bid_restriction_item (notice_no, category, code, name, area_code,
-                          sub_area_code, sub_area_name) VALUES (?,?,?,?,?,?,?)""", (notice_no, cat, *values))
+                          sub_area_code, sub_area_name) VALUES (?,?,?,?,?,?,?)""",
+                       (notice_no, cat, *parse_restriction_item(cat, it)))
 
     # A금액·순공사원가·개찰일시·정정 차수 (SRM 상세에만 있는 값, 없으면 기존 값 유지)
     revision = basic.get("bidRevision", basic.get("revision"))
