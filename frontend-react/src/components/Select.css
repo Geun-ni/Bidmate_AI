@@ -1,0 +1,20 @@
+.sel { position: relative; width: 100%; }
+.sel-trigger { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; height: 44px; padding: 0 14px; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); background: var(--surface); color: var(--text); cursor: pointer; text-align: left; }
+.sel-sm .sel-trigger { height: 34px; font-size: .85rem; }
+.sel-trigger:focus-visible, .sel-trigger[aria-expanded="true"] { outline: none; border-color: var(--text); box-shadow: var(--focus); }
+.sel-trigger[aria-invalid="true"] { border-color: var(--danger); }
+.sel-trigger:disabled { background: var(--surface-2); color: var(--text-3); cursor: not-allowed; }
+.sel-value { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sel-placeholder { color: var(--text-3); }
+.sel-caret { flex: none; color: var(--text-3); font-size: .8rem; transition: transform .15s; }
+.sel-trigger[aria-expanded="true"] .sel-caret { transform: rotate(180deg); }
+
+/* 목록은 트리거와 같은 너비, 항목은 같은 3열 격자로 정렬 */
+.sel-list { position: absolute; left: 0; right: 0; top: calc(100% + 4px); z-index: 40; max-height: 264px; overflow-y: auto; overscroll-behavior: contain; margin: 0; padding: 4px; background: var(--surface); border: 1px solid var(--border-strong); border-radius: 14px; box-shadow: 0 16px 40px rgb(0 0 0 / .14); animation: popIn .18s var(--ease); }
+.sel-list.up { top: auto; bottom: calc(100% + 4px); }
+.sel-option { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; align-items: center; gap: 6px; min-height: 36px; padding: 6px 10px 6px 6px; border-radius: 6px; cursor: pointer; font-size: .9rem; line-height: 1.3; }
+.sel-option.active { background: var(--brand-soft); }
+.sel-option[aria-selected="true"] { color: var(--brand); font-weight: 650; }
+.sel-check { text-align: center; font-size: .8rem; }
+.sel-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sel-hint { font-size: .75rem; color: var(--text-3); font-variant-numeric: tabular-nums; font-weight: 500; }

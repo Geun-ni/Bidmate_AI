@@ -1,0 +1,8 @@
+.devpanel { position: fixed; right: 16px; bottom: 16px; z-index: 50; display: grid; justify-items: end; gap: 8px; }
+.devpanel-toggle { height: 36px; padding: 0 14px; border-radius: 999px; border: 1px dashed var(--border-strong); background: var(--surface); color: var(--text-2); font-size: .8rem; font-weight: 700; cursor: pointer; box-shadow: 0 4px 14px rgb(0 0 0 / .12); }
+.devpanel-body { width: 260px; padding: 12px; border-radius: 12px; background: var(--surface); border: 1px solid var(--border); box-shadow: 0 10px 30px rgb(0 0 0 / .18); }
+.devpanel-title { font-weight: 750; font-size: .88rem; margin-bottom: 8px; }
+.devpanel-option { display: flex; gap: 8px; align-items: flex-start; padding: 6px; border-radius: 8px; cursor: pointer; font-size: .85rem; }
+.devpanel-option:hover { background: var(--surface-2); }
+.devpanel-option > span { display: grid; }
+.devpanel-option input { margin-top: 3px; accent-color: var(--brand); }
