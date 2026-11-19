@@ -10,22 +10,22 @@
 
 실행 (저장소 루트):
   python -m pip install -r backend/collector/requirements.txt
-  python -m backend.collector.collect --days 7 --limit 5
+  python -m backend.collector.collect --days 7 --limit 5     # 진행 중 적격심사 공사용역 신규 5건
+  python -m backend.collector.collect --dry-run              # 처리 대상만 확인 (SRM 요청 없음)
   python -m backend.collector.collect --notice E012607925 E012607914
 """
 import argparse
 import hashlib
 import json
 import re
-import sqlite3
 from datetime import datetime
 from pathlib import Path
 
 from backend.collector import clients
 from backend.collector.doc_reader import detect_ext, read_document
+from backend.db.init_db import DEFAULT_DB_PATH, init_db
 
 ROOT = Path(__file__).resolve().parents[2]
-SCHEMA = ROOT / "backend" / "db" / "schema.sql"
 OPEN_STATES = ("PreAttendProgress", "AttendProgress")  # 공고진행·입찰진행 (마감·유찰·개찰·종료 제외)
 CATEGORIES = ("LICENSE", "QUALIFIED", "REGION", "LICENSE_MAIN")
 # SRM 응답에 섞여 오는 담당자 개인정보는 저장하지 않는다
@@ -69,10 +69,33 @@ def to_int(v):
 
 
 def connect(db_path):
-    db = sqlite3.connect(db_path)
-    db.execute("PRAGMA foreign_keys = ON")
-    db.executescript(SCHEMA.read_text(encoding="utf-8"))
-    return db
+    """공통 초기화 진입점(backend.db.init_db)으로 스키마를 적용한 연결."""
+    return init_db(db_path)
+
+
+def in_scope(row):
+    """서비스 대상: 한전(COM01) 공사용역(ConstructionService) 중 낙찰방법이 적격심사(QualifiedEval)인 공고."""
+    return (row.get("companyId", "COM01") == "COM01"
+            and row.get("purchaseType") == "ConstructionService"
+            and row.get("bidType") == "QualifiedEval")
+
+
+def latest_per_notice(rows):
+    """Open API가 같은 공고번호를 정정 차수별로 여러 번 주는 경우(예: E012607113) 최신 등록 행만 남긴다."""
+    latest = {}
+    for row in rows:
+        prev = latest.get(row["no"])
+        if prev is None or (row.get("createDatetime") or "") >= (prev.get("createDatetime") or ""):
+            latest[row["no"]] = row
+    return list(latest.values())
+
+
+def is_open(row, now_text=None):
+    """진행 중 공고. progressState 는 마감 후에도 'AttendProgress'로 남는 경우가 많아
+    입찰참가신청 마감 일시('YYYY-MM-DD HH:MM:SS', KST)도 함께 확인한다."""
+    now_text = now_text or datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    close = row.get("bidAttendReqCloseDatetime")
+    return row.get("progressState") in OPEN_STATES and (not close or close >= now_text)
 
 
 # ---------------------------------------------------------------- 저장
@@ -260,50 +283,45 @@ def process_notice(db, srm, row):
 
 def main():
     ap = argparse.ArgumentParser(description="SRM 공고 수집 (API 우선 + SRM 보완, 공고당 1회)")
-    ap.add_argument("--db", default=str(ROOT / "bidmate.sqlite3"))
+    ap.add_argument("--db", default=str(DEFAULT_DB_PATH))
     ap.add_argument("--days", type=int, default=7, help="Open API 조회 기간(일, 최대 90)")
     ap.add_argument("--limit", type=int, default=5, help="이번 실행에서 처리할 신규 공고 수")
-    ap.add_argument("--bid-type", default="all", help="낙찰방법 필터 (예: QualifiedEval), 'all'이면 전체")
     ap.add_argument("--include-closed", action="store_true", help="마감·개찰·종료 공고도 처리")
-    ap.add_argument("--notice", nargs="*", help="특정 공고번호만 처리")
+    ap.add_argument("--notice", nargs="*", help="특정 공고번호만 처리 (서비스 범위 밖이어도 처리)")
     ap.add_argument("--interval", type=float, default=3.0, help="SRM 요청 간격(초)")
     ap.add_argument("--refresh", action="store_true", help="이미 수집한 공고도 다시 처리")
+    ap.add_argument("--dry-run", action="store_true", help="bid_notice 저장 후 처리 대상만 출력 (SRM 요청 없음)")
     args = ap.parse_args()
 
     db = connect(args.db)
     run_id = db.execute("INSERT INTO collect_run (started_at) VALUES (?)", (now(),)).lastrowid
-    rows = clients.fetch_open_api_notices(clients.load_api_key(ROOT), days=args.days)
+    rows = latest_per_notice(clients.fetch_open_api_notices(clients.load_api_key(ROOT), days=args.days))
     wanted = set(args.notice or [])
-    for row in rows:  # 자재구매(Product)·타 발주사 공고는 저장하지 않음 (직접 지정한 공고는 예외)
-        if row["no"] in wanted or (row.get("purchaseType") == "ConstructionService"
-                                   and row.get("companyId", "COM01") == "COM01"):
+    for row in rows:  # 서비스 범위 밖 공고는 저장하지 않음 (직접 지정한 공고는 예외)
+        if row["no"] in wanted or in_scope(row):
             upsert_notice(db, row)
     db.commit()
 
     if args.notice:
-        targets = [r for r in rows if r["no"] in set(args.notice)]
-        missing = set(args.notice) - {r["no"] for r in targets}
+        targets = [r for r in rows if r["no"] in wanted]
+        missing = wanted - {r["no"] for r in targets}
         if missing:
             print(f"Open API 조회 기간에 없는 공고: {sorted(missing)} (--days 를 늘려 보세요)")
     else:
-        # 팀 결정: 한전(COM01) 공사용역 공고, 진행 중인 공고만.
-        # progressState 는 마감 후에도 'AttendProgress'로 남는 경우가 많아 입찰참가신청 마감 일시도 확인
-        today = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-        def is_open(r):
-            close = r.get("bidAttendReqCloseDatetime")
-            return r.get("progressState") in OPEN_STATES and (not close or close >= today)
-
-        targets = [r for r in rows
-                   if r.get("companyId", "COM01") == "COM01"
-                   and r.get("purchaseType") == "ConstructionService"
-                   and (args.include_closed or is_open(r))
-                   and (args.bid_type == "all" or r.get("bidType") == args.bid_type)]
+        targets = [r for r in rows if in_scope(r) and (args.include_closed or is_open(r))]
         targets.sort(key=lambda r: r.get("createDatetime") or "", reverse=True)
     if not args.refresh:
         targets = [r for r in targets if not is_done(db, r["no"])]
     targets = targets[:args.limit] if not args.notice else targets
-    print(f"Open API 공고 {len(rows)}건 → 이번 처리 대상 {len(targets)}건")
+    print(f"Open API 공고 {len(rows)}건 → 서비스 범위 {sum(map(in_scope, rows))}건 → 이번 처리 대상 {len(targets)}건")
+    if args.dry_run:
+        for r in targets:
+            print(f"  {r['no']} {r.get('bidType')} 신청마감={r.get('bidAttendReqCloseDatetime')} {r.get('name', '')[:30]}")
+        db.execute("UPDATE collect_run SET finished_at=?, api_notice_count=?, target_count=?, processed_count=0, "
+                   "stopped_reason='dry-run' WHERE id=?", (now(), len(rows), len(targets), run_id))
+        db.commit()
+        db.close()
+        return
 
     processed, reason = 0, "완료"
     try:

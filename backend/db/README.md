@@ -1,121 +1,139 @@
-# 입찰메이트 DB 스키마 v1.0 설명서
+# 입찰메이트 DB 스키마 설명서 (v1.1)
 
 > 담당: 이정근 (개발팀 · DB 설계) · 2026-11-19  
-> 파일: [`schema.sql`](schema.sql) (SQLite) · 기준정보 시드: [`seed_reference.py`](seed_reference.py)  
-> 기준 문서: [기능명세서 §5](../../docs/planning/기능명세서.md), [업체정보 데이터 정의서 v0.2](../../docs/planning/업체정보_데이터_정의서.md), 11-18 회의 결정
+> 기준 문서: [기능명세서 §5](../../docs/planning/기능명세서.md), [업체정보 데이터 정의서 v0.2](../../docs/planning/업체정보_데이터_정의서.md), 11-18 회의, 11-19 결정(적격심사 공고만, 매칭은 아직 범위 밖)
 
-## 한눈에 보기
+SQLite 하나(`bidmate.sqlite3`)에 테이블 28개 + 뷰 1개. 업무 영역별로 SQL 파일을 나눴고, **초기화 진입점은 `init_db.py` 하나**다.
 
-테이블 28개 + 뷰 1개를 **6개 영역**으로 나눴다. 각 영역은 **채우는 담당이 한 명**이 되도록 나눴으니, 본인 영역만 쓰고 나머지는 읽기만 하면 된다.
-
-| 영역 | 테이블 | 채우는 쪽 | 읽는 쪽 |
-|---|---|---|---|
-| **A. 기준정보** | 면허·자격·지역 마스터, 상하위 인정 규칙 | 시드 스크립트 (참고 엑셀) | 업체정보 화면, 룰 엔진 |
-| **B. 업체** | `company`, `company_license`, `company_restricted_qualification`, `company_notification_setting` | 업체정보 화면 (프론트 → 백엔드) | 룰 엔진, 알림 |
-| **C. 공고 수집** | `bid_notice`, `bid_restriction_*`, `bid_attachment`, `bid_document_content`, `collect_run` | 수집기 `backend/collector` (정근) | 전원 |
-| **D. 문서 분석** | `notice_analysis_cache`, `document_extraction` | **AI 파트 (용희)** | 요약 탭, 룰 엔진 |
-| **E. 판정·점수** | `company_bid_eligibility`, `evaluation_rule`, `company_evaluation_draft` | 룰 엔진 (정근) · `evaluation_rule`은 AI 추출값 기반 | 추천 목록, 점수 계산 탭 |
-| **F. 서류·사용자 작업·알림** | `required_document_item`, `document_template_item`, `company_document_check`, `favorite_notice`, `notice_schedule_event`, `notice_notification` | 서류: AI 추출 / 체크·별표: 화면 / 알림: 알림 발송 | 필요서류 탭, 달력, 알림 |
-
-```mermaid
-erDiagram
-    company ||--o{ company_license : 보유
-    company ||--o{ company_restricted_qualification : 보유
-    company ||--o| company_notification_setting : 알림설정
-    license_master ||--o{ company_license : ""
-    restricted_qualification_master ||--o{ company_restricted_qualification : ""
-    srm_region_group_master ||--o{ srm_region_district_master : ""
-    srm_region_district_master ||--o{ company : 본점소재지
-
-    bid_notice ||--o| bid_restriction_snapshot : 자동심사설정
-    bid_notice ||--o{ bid_restriction_category : 범주별조회결과
-    bid_notice ||--o{ bid_restriction_item : 면허자격명_적격자격명_지역
-    bid_notice ||--o{ bid_attachment : 공고문_적격심사기준
-    bid_attachment ||--o| bid_document_content : 원문텍스트_수식
-
-    bid_notice ||--o| notice_analysis_cache : AI분석상태
-    bid_notice ||--o{ document_extraction : AI추출값
-    bid_notice ||--o{ evaluation_rule : 배점_산식
-    bid_notice ||--o{ required_document_item : 필요서류
-    bid_notice ||--o{ notice_schedule_event : 일정
-
-    company ||--o{ company_bid_eligibility : 판정
-    bid_notice ||--o{ company_bid_eligibility : ""
-    company ||--o{ company_evaluation_draft : 점수시뮬레이션
-    company ||--o{ company_document_check : 서류체크
-    required_document_item ||--o{ company_document_check : ""
-    company ||--o{ favorite_notice : 관심공고
-    company ||--o{ notice_notification : 알림이력
-```
-
-## 화면별로 어떤 테이블을 쓰나
-
-| 화면 (기능명세서) | 읽는 테이블 | 쓰는 테이블 |
-|---|---|---|
-| 업체정보 입력 (UI-02) | `license_master`, `restricted_qualification_master`, `srm_region_*` | `company`, `company_license`, `company_restricted_qualification` |
-| 추천 공고 목록 (UI-01) | **`v_recommendation`** (진행 중 공사용역 공고 + 판정 + 별표) | `favorite_notice` |
-| 요약 탭 (UI-03) | `bid_restriction_item`(자동심사 조건), `document_extraction`, `evaluation_rule` | — |
-| 점수 계산 탭 (UI-04) | `evaluation_rule`, `bid_notice.a_amount`·`approximate_amount` | `company_evaluation_draft` |
-| 필요서류 탭 (UI-05) | `required_document_item` | `company_document_check` |
-| 관심공고 달력 (UI-06) | `notice_schedule_event` | `favorite_notice` |
-| 알림 설정 (UI-07) | — | `company_notification_setting`, `notice_notification` |
-
-## 팀 결정 → 컬럼 대응
-
-| 팀 결정 (기획 정리) | 저장 위치 |
-|---|---|
-| 공사용역만 (`purchaseType=ConstructionService`), 한전만 (`companyId=COM01`) | `bid_notice.purchase_type`, `company_id_src` — 수집기가 자재구매 공고는 저장하지 않음 |
-| 진행 중 공고만 | `bid_notice.is_open` + **입찰참가신청 마감 일시** (아래 주의 1) |
-| 예비가격 기초금액 (`estimatedPriceBasicAmount`) | `bid_notice.estimated_price_basic_amount` |
-| 추정가격 (`presumedPrice`, VAT 제외) | `bid_notice.presumed_price` |
-| 사정액 (`approximateAmount`) | `bid_notice.approximate_amount` |
-| A금액 (웹 `totalAAmt`) | `bid_notice.a_amount` — SRM 상세 조회에 포함, 추가 요청 없음 |
-| 순공사원가 (웹 `overHeadCostAmount`) | `bid_notice.net_construction_cost` |
-| 자동심사 조건: 면허자격명 / 적격자격명 | `bid_restriction_item` (`category` = `LICENSE` / `QUALIFIED` / `REGION` / `LICENSE_MAIN`) |
-| 공고문 → 입찰참가자격, 증명 서류 | `document_extraction` (field), `required_document_item` (`stage=ELIGIBILITY`) |
-| 적격심사기준 → 배점표, 입찰가격 산식, 해당/인접 사업소, 업종별 경영상태 평균비율 | `evaluation_rule` (`category` = `PRICE` / `PERFORMANCE` / `OFFICE` / `MANAGEMENT` …, 세부는 `parameters` JSON) |
-| 적격심사 제출서류 (계약부서 / 감독부서, "2가지 중 1가지") | `required_document_item.stage`, `submit_to`, `alternative_group` |
-| 공고유형별 대표 제출서류 목록 (정리본 1~7번) | `document_template_item` (`work_type` + 추정가격 구간) |
-| 감리 상위 면허 자동 통과 (전력종합감리 → 전력전문감리) | `license_equivalence` |
-| 제출기한: 개찰 후 통보서 접수일로부터 5일 이상 (적격심사기준 제8조 ②) | `notice_schedule_event` `QUALIFICATION_DOC_DUE`, 개찰 전엔 `confirmed=0`(참고 일정) |
-
-## 꼭 알아야 할 규칙
-
-1. **"진행 중"은 `progressState`만 믿으면 안 된다.** Open API에서 공사용역 1,092건이 전부 `AttendProgress`였고, 그중 904건은 입찰참가신청 마감이 이미 지났다. `v_recommendation`과 수집기는 **마감 일시도 함께** 확인한다.
-2. **코드는 전부 문자열.** 면허 `0041`, 자격 `1`, 시군구 `011013`처럼 앞자리 0이 의미가 있다. 참고 엑셀 `지역제한 목록.xlsx`는 시군구 코드 162건이 숫자로 저장돼 0이 빠져 있어(`11013`), 시드할 때 6자리로 복원한다.
-3. **조회 실패 ≠ 제한 없음.** `bid_restriction_category.fetch_status='SUCCESS'`이고 `item_count=0`일 때만 "제한 없음(`NOT_APPLICABLE`)". 실패면 판정은 `REVIEW`.
-4. **업체 지역은 (광역, 시군구) 쌍으로 검증.** `company`의 `(area_limit, sub_area_code)`가 기준정보에 없는 조합이면 저장 자체가 막힌다(예: 강원 + 가평군).
-5. **상태값은 정해진 값만.** `MATCH/MISMATCH/REVIEW/NOT_APPLICABLE` 등은 CHECK 제약으로 막혀 있어 오타가 들어가면 저장 오류가 난다.
-6. **개인정보 미저장.** SRM 응답의 한전 담당자 이름·사번·연락처는 저장 전에 제거한다. 업체 정보는 가상 데이터만 사용한다.
-7. **금액은 원 단위 정수, 일시는 문자열(KST).** Open API 일시는 `YYYY-MM-DD HH:MM:SS` 그대로 저장한다.
-
-## AI 파트 (용희) 연결 지점
-
-- **입력:** `bid_document_content.text`(본문), `equations`(한글 수식 스크립트 JSON) — 공고문/적격심사기준 구분은 `bid_attachment.doc_kind`.
-- **출력:** `document_extraction`(필드·값·근거·검증상태), `evaluation_rule`(배점·산식·파라미터), `required_document_item`(서류 목록), 분석 상태는 `notice_analysis_cache`.
-- `field` 이름, `parameters` JSON 형식, 서류 `stage` 분류 기준은 **함께 정하자** — 스키마는 저장 구조만 고정했다.
-
-## 초기화
+## 1. 초기화 순서와 실행 명령
 
 ```bash
-python -m backend.db.seed_reference --db bidmate.sqlite3       # 스키마 생성 + 기준정보(면허 3,629 / 자격 20 / 지역 18그룹·253시군구)
-python -m backend.collector.collect --db bidmate.sqlite3 --days 7 --limit 5   # 공고 수집 (요구: .env SRM_API_KEY)
+# 저장소 루트에서
+python -m backend.db.init_db                          # ① 스키마 적용 (01 → 07 순서)
+python -m backend.db.seed_reference                   # ② 기준정보 시드 (스키마도 함께 적용)
+python -m pip install -r backend/collector/requirements.txt
+python -m backend.collector.collect --dry-run         # ③ 수집 대상 확인 (요구: .env SRM_API_KEY)
+python -m backend.collector.collect --limit 5         # ④ 공고 수집
 ```
 
-`bidmate.sqlite3`는 `.gitignore`로 제외된다. 연결마다 `PRAGMA foreign_keys = ON`을 먼저 실행한다.
+- 모든 명령의 기본 DB는 저장소 루트 `bidmate.sqlite3`(`.gitignore` 제외), `--db 경로`로 변경.
+- 코드에서 DB를 열 때는 `sqlite3.connect` 대신 아래를 쓴다. 외래키 검사(`PRAGMA foreign_keys = ON`)와 스키마 적용이 함께 된다.
+  ```python
+  from backend.db.init_db import DEFAULT_DB_PATH, init_db
+  db = init_db(DEFAULT_DB_PATH)
+  ```
+- **다시 실행해도 안전:** 테이블은 `CREATE TABLE IF NOT EXISTS`라 기존 데이터가 유지되고, 뷰(07)만 지웠다가 다시 만든다(데이터 없음). 시드는 UPSERT라 여러 번 실행해도 같다.
 
-## 검증 (2026-11-19)
+## 2. 파일 구조 (적용 순서 = 외래키·뷰 의존 순서)
 
-- 스키마 적용 `integrity_check=ok`, 외래키 위반 0건, 테이블 28개·뷰 1개
-- 차단 확인: 없는 시군구, 광역과 맞지 않는 시군구, 사업자번호 형식 오류, 없는 면허코드, 같은 면허 중복, 판정 상태 오타
-- 실제 공고 E012607925 수집 → 면허 A06·지역 I, 사정액 503,486,765, A금액 27,323,919, 순공사원가 137,863,291, 개찰 11-12 15:00 저장
-- `v_recommendation`: 마감 지난 공고 제외, 마감 전 공고만 표시
+| 파일 | 영역 | 테이블 | 참조하는 파일 |
+|---|---|---|---|
+| `schema/01_reference.sql` | A. 기준정보 | `license_master`, `restricted_qualification_master`, `restricted_qualification_equivalence`, `license_equivalence`, `srm_region_group_master`, `srm_region_district_master` | — |
+| `schema/02_company.sql` | B. 업체 | `company`, `company_license`, `company_restricted_qualification`, `company_notification_setting` | 01 |
+| `schema/03_bid_collection.sql` | C. 공고·첨부·수집 이력 | `bid_notice`, `bid_restriction_snapshot`, `bid_restriction_category`, `bid_restriction_item`, `bid_attachment`, `bid_document_content`, `collect_run` | — |
+| `schema/04_document_analysis.sql` | D. AI 문서 분석 | `notice_analysis_cache`, `document_extraction` | 03 |
+| `schema/05_evaluation.sql` | E. 자격 판정·점수 | `company_bid_eligibility`, `evaluation_rule`, `company_evaluation_draft` | 02, 03 |
+| `schema/06_notice_workflow.sql` | F. 필요서류·즐겨찾기·일정·알림 | `required_document_item`, `document_template_item`, `company_document_check`, `favorite_notice`, `notice_schedule_event`, `notice_notification` | 02, 03 |
+| `schema/07_views.sql` | 화면 조회 뷰 | `v_recommendation` (뷰) | 03, 05, 06 |
+| `init_db.py` | 초기화 진입점 | `schema/[0-9][0-9]_*.sql`을 파일명 순서로 적용 | — |
+| `seed_reference.py` | 기준정보 시드 | 01의 테이블 (참고 엑셀 + 정의서) | — |
 
-## 아직 정하지 않은 것
+`company_notification_setting`은 업체가 소유하는 설정이라 02에 두었다(06에는 발송 이력만).
 
-- `work_type`(공고유형) 분류 규칙 — 대표 공고 정리본 기준으로 공고명·면허·금액으로 분류할지 기획과 협의
-- `document_template_item` 시드 (정리본 1~7번 입력) — 형식 확정 후 추가
-- 다중 사용자(`company_user`)는 후속 (정의서 §9)
-- 운영 DB를 PostgreSQL로 옮길지 (기획서 5장 제안) — SQLite 문법만 사용해 전환 비용을 줄였다
+## 3. 테이블별 쓰는 모듈 / 데이터 출처 / 읽는 모듈 (코드 확인 결과, 2026-11-19)
 
-> 이전 `schema.sql`(P0 데모용 `notices`, `company_profiles` 등)은 이 버전으로 대체했다. `/api/demo`는 여전히 `data/sample/demo.json`을 읽으므로 데모 동작에는 영향이 없다.
+저장소 전체를 확인한 결과 **DB를 실제로 쓰는 코드는 `seed_reference.py`와 `backend/collector/collect.py` 두 개뿐**이다. `ai/summary.py`, `backend/server.py`(`/api/demo`만 있음, `data/sample/demo.json` 사용), `backend/matching.py`, `frontend/app.js`에는 SQL·DB 접근이 없다. 아래에서 **예정** = 아직 코드 없음, **팀 결정 필요** = 저장 주체를 정하지 않음.
+
+| 테이블 | 직접 쓰는 모듈 | 데이터 출처 | 읽는 모듈 |
+|---|---|---|---|
+| `license_master`, `restricted_qualification_master`, `srm_region_group_master`, `srm_region_district_master`, `restricted_qualification_equivalence` | `seed_reference.py` ✅ | 참고 엑셀 3종, 업체정보 정의서 §5.3·§6.2 | 예정: 업체정보 API, 룰 엔진 |
+| `license_equivalence` | 예정: 시드 (감리 전력종합 → 전력전문) | 팀 정리본 (대표 공고 감리용역) | 예정: 룰 엔진 |
+| `company`, `company_license`, `company_restricted_qualification` | 예정: 업체정보 API ← 프론트 업체정보 입력(UI-02) | 사용자 입력 (가상 업체만) | 예정: 룰 엔진 |
+| `company_notification_setting` | 예정: 알림 설정 API ← 프론트 알림 설정(UI-07) | 사용자 입력 | 예정: 알림 발송 모듈 |
+| `bid_notice` | `collect.py` ✅ (`upsert_notice`, SRM 금액·개찰일 갱신) | Open API + SRM `findBidBasicInfo` | `collect.py`(재수집 여부), 07 뷰, 예정: 공고 API |
+| `bid_restriction_snapshot`, `bid_restriction_category`, `bid_restriction_item` | `collect.py` ✅ (`collect_srm`) | SRM `/router` 투찰제한 | `collect.py`(`is_done`), 예정: 룰 엔진·요약 탭 API |
+| `bid_attachment` | `collect.py` ✅ (`save_attachment`) | Open API `filenlink` / SRM 첨부 | 예정: AI 문서 분석, 공고 상세 API |
+| **`bid_document_content`** | `collect.py` ✅ (`save_content`) — 해석 없이 원문만 | 다운로드한 HWP/HWPX/PDF | 예정: AI 파트 (LLM 입력) |
+| `collect_run` | `collect.py` ✅ | 수집 실행 결과 | 운영 확인용 |
+| `notice_analysis_cache` | **팀 결정 필요** (AI 파트 직접 vs 백엔드 API) | AI 분석 상태 | 예정: 수집기·AI 파트 재분석 판단 |
+| **`document_extraction`** | **팀 결정 필요** (AI 파트가 직접 저장 vs 백엔드가 검증 후 저장) | AI 파트 LLM 추출 (`bid_document_content` 기반) | 예정: 요약 탭 API, 룰 엔진 |
+| `company_bid_eligibility` | 예정: 룰 엔진 (업체 매칭은 현재 범위 밖) | `bid_restriction_*` + 업체 정보 | 07 뷰 |
+| `evaluation_rule` | **팀 결정 필요** (AI 직접 저장 vs 룰 엔진이 산식·숫자 검증 후 저장) | AI 추출값 + 수식 스크립트 | 예정: 점수 계산 탭 API |
+| `company_evaluation_draft` | 예정: 점수 계산 API ← 프론트 점수 계산 탭(UI-04) | 사용자 입력(입찰가격·예정가격 등) + 계산 결과 | 예정: 점수 계산 탭 API |
+| **`required_document_item`** | **팀 결정 필요** (AI 직접 vs 백엔드 검증 후) | AI 추출 (공고문·적격심사기준) | 예정: 필요서류 탭 API |
+| `document_template_item` | 예정: 시드 (팀 정리본 1~7번) | 팀 정리본 | 예정: 필요서류 추출 비교 |
+| **`company_document_check`** | 예정: 서류 체크 API ← 프론트 필요서류 탭(UI-05). 현재 프론트는 브라우저 메모리(`Map`)에만 보관 | 사용자 체크 | 예정: 필요서류 탭 API |
+| `favorite_notice` | 예정: 관심공고 API ← 프론트 별표 토글(UI-01·06) | 사용자 클릭 | 07 뷰, 예정: 달력 |
+| `notice_schedule_event` | **팀 결정 필요** (수집기가 API·SRM 일정 저장 + 문서 추출 제출기한은 누가?) | Open API·SRM 일정, 적격심사기준 제8조 ② | 예정: 달력 API |
+| **`notice_notification`** | 예정: 알림 발송 모듈 — **담당 팀 결정 필요** (기획서상 알림 연동은 AI 팀) | 판정 결과 + 알림 설정 | 알림 발송 모듈(중복 방지) |
+| `v_recommendation` (뷰) | — | 03·05·06 조인 | 예정: 추천 목록 API |
+
+**화면 → 백엔드 API (전부 미구현, 이름은 제안):** 업체정보 `PUT /api/companies/{company_id}`, 알림 설정 `PUT /api/companies/{company_id}/notification-setting`, 관심공고 `PUT/DELETE /api/companies/{company_id}/favorites/{notice_no}`, 서류 체크 `PUT /api/companies/{company_id}/document-checks/{item_id}`, 점수 계산 `PUT /api/companies/{company_id}/evaluation-drafts/{notice_no}`, 추천 목록 `GET /api/companies/{company_id}/recommendations`.
+
+## 4. 이름 규칙
+
+- 테이블·컬럼: 소문자 `snake_case`, 테이블명은 단수형, 데이터 의미가 드러나게 (`company_license`, `bid_attachment`).
+- 기준정보 테이블은 업체정보 정의서 이름(`*_master`, `*_equivalence`)을 따른다.
+- **키:** 기존 방식 우선.
+  - 공고는 외부 고유 코드 `notice_no`(공고번호)를 PK·FK로 쓴다 (코드 키 유지).
+  - 업체 계열 PK는 정의서 이름(`company_id`, `company_license_id` 등, UUID 문자열)을 유지한다.
+  - 새로 만든 단일 내부 PK는 `id`(INTEGER) — `bid_attachment.id`, `bid_restriction_item.id` 등.
+  - 새 외래키는 참조 대상을 드러내는 이름을 쓴다(아래 변경 제안 참고).
+- **코드값은 전부 TEXT:** 면허 `0041`, 자격 `1`, 시군구 `011013`. 참고 엑셀 `지역제한 목록.xlsx`는 시군구 162건이 숫자로 저장돼 0이 빠져 있어(`11013`) `seed_reference.py`가 6자리로 복원한다.
+- 상태값은 대문자 열거형 + CHECK 제약(`MATCH/MISMATCH/REVIEW/NOT_APPLICABLE` 등). 금액은 원 단위 INTEGER, 일시는 문자열(KST).
+
+### 이름 변경 제안 (적용하지 않음 — 팀 확인 후 진행)
+
+| 기존명 | 제안명 | 이유 | 영향받는 코드 |
+|---|---|---|---|
+| `bid_notice.company_id_src` | `orderer_company_code` | `company_id`는 우리 업체(`company`) FK 이름인데, 이 컬럼은 발주사 구분(API `companyId=COM01`)이라 혼동 | `03_bid_collection.sql`, `07_views.sql`, `collect.py`(`upsert_notice`) |
+| `bid_document_content.attachment_id` | `bid_attachment_id` | 외래키 이름에 참조 테이블을 드러냄 | `03_bid_collection.sql`, `collect.py`(`save_content`) |
+| `document_extraction.attachment_id` | `bid_attachment_id` | 위와 같음 | `04_document_analysis.sql` (코드 없음) |
+| `required_document_item.source_attachment_id` | `source_bid_attachment_id` | 위와 같음 | `06_notice_workflow.sql` (코드 없음) |
+| `company_document_check.item_id` | `required_document_item_id` | `item_id`만으로는 어떤 항목인지 알 수 없음 | `06_notice_workflow.sql` (코드 없음) |
+| `notice_analysis_cache`, `notice_schedule_event`, `notice_notification`, `favorite_notice` | `bid_notice_analysis`, `bid_notice_schedule_event`, `bid_notice_notification`, `company_favorite_notice` | 공고 테이블 접두어(`bid_notice`) 통일, 즐겨찾기는 업체 소유임을 드러냄. 기능명세서 §5 이름과 달라지므로 기획 문서도 함께 수정 필요 | 04·06·07 SQL, 기능명세서 §5 (코드 없음) |
+| `collect_run` | `collection_run` | 동사형 → 명사형 | `03_bid_collection.sql`, `collect.py` |
+
+현재 운영 DB는 없으므로 변경 비용은 SQL·코드 수정뿐이다. 운영 DB가 생긴 뒤 바꾸면 `ALTER TABLE ... RENAME` 마이그레이션이 필요하다.
+
+### 쓰기 책임 정리 제안 (팀 결정 필요)
+
+- **AI 추출 결과(`document_extraction`, `evaluation_rule`, `required_document_item`):** AI 파트는 JSON을 반환하고, 백엔드가 [`validate_extraction.py`](../../docs/planning/poc/validate_extraction.py) 같은 규칙 검증(사정액=API, 근거 문장 원문 존재 등)을 거쳐 저장하는 방식을 제안한다. 검증 실패는 `verification_status='REVIEW'`.
+- **`notice_schedule_event`:** API·SRM 일정은 수집기가, 문서에서 뽑은 제출기한은 AI 결과 저장 시 함께 넣는 방식을 제안한다.
+- **`notice_notification`:** 발송은 AI 파트(알림 문구 생성), 대상 선정과 이력 저장은 백엔드가 맡는 방식을 제안한다.
+
+## 5. 팀 결정 → 컬럼 대응
+
+| 팀 결정 | 저장 위치 |
+|---|---|
+| 한전(`COM01`) 공사용역(`ConstructionService`) 중 **적격심사(`QualifiedEval`)** 공고만 | 수집기 `in_scope()` — 범위 밖 공고는 `bid_notice`에 저장하지 않음, 뷰에도 같은 조건 |
+| 진행 중 공고만 | `progress_state` + `attend_req_close_at` (API 상태만으로는 마감 공고가 섞임) |
+| 예비가격 기초금액 / 추정가격 / 사정액 | `estimated_price_basic_amount` / `presumed_price` / `approximate_amount` |
+| A금액(`totalAAmt`) / 순공사원가(`overHeadCostAmount`) | `a_amount` / `net_construction_cost` — SRM 상세 조회에 포함, 추가 요청 없음 |
+| 자동심사 조건: 면허자격명 / 적격자격명 / 지역 / 주력분야 | `bid_restriction_item.category` = `LICENSE` / `QUALIFIED` / `REGION` / `LICENSE_MAIN` |
+| 적격심사기준: 배점표, 입찰가격 산식, 해당/인접 사업소, 업종별 경영상태 평균비율 | `evaluation_rule.category` = `PERFORMANCE`·`PASS_SCORE` / `PRICE` / `OFFICE` / `MANAGEMENT` (세부는 `parameters` JSON) |
+| 제출서류: 계약부서/감독부서, "2가지 중 1가지" | `required_document_item.submit_to`, `alternative_group` |
+| 제출기한: 통보서 접수일로부터 5일 이상 (제8조 ②), 개찰 후 약 1주 | `notice_schedule_event` `QUALIFICATION_DOC_DUE`, 개찰 전 `confirmed=0` |
+| 감리 상위 면허 자동 통과 | `license_equivalence` (시드 예정) |
+
+## 6. 검증 (2026-11-19, 임시 DB)
+
+| 확인 | 결과 |
+|---|---|
+| 분리 전후 구조 비교 | 기존 `schema.sql`과 분리 파일로 만든 DB의 테이블·컬럼·외래키·인덱스 동일 (뷰만 적격심사 조건 추가) |
+| ① 초기화 | 01~07 순서 적용, 테이블 28·뷰 1, `integrity_check=ok` |
+| ② 시드 | 면허 3,629 / 자격 20 / 상하위 21 / 지역그룹 18 / 시군구 253, 6자리 복원 확인(`F_011013` 춘천시) |
+| ③ 수집 범위 | 30일 API 1,724건 → 적격심사 공사용역 957건만 저장, 처리 대상은 신청 마감 전 공고만. 정정 중복(E012607113)은 최신 행 저장 |
+| ④ 수집 저장 | E012608220: 면허 A06·지역 C, 사정액 271,946,271, A금액 10,171,627, 순공사원가 131,079,269, 개찰 11-26, 첨부 2종·원문 저장 |
+| ⑤ 추천 뷰 | 가상 업체 + 판정 2건 중 신청 마감 전 공고만 조회, 별표 반영 |
+| 재초기화 | 새 DB(업체가 면허 참조 중)에 `init_db`+`seed_reference` 재실행, 구 `schema.sql`로 만든 DB에 `init_db` 실행 → 두 DB 모두 행 수 변화 없음, 외래키 위반 0, 뷰 갱신 |
+| 제약 | 없는 시군구, 광역과 맞지 않는 시군구, 사업자번호 형식, 없는 면허, 면허 중복, 판정 상태 오타 → 저장 차단 |
+
+참고: 시드를 `INSERT OR REPLACE`에서 UPSERT로 바꿨다. 현재 외래키는 `NO ACTION`이라 REPLACE도 실패하지는 않지만, 나중에 `ON DELETE CASCADE`가 붙으면 REPLACE가 참조 행(업체 면허 등)을 조용히 지운다.
+
+## 7. 아직 정하지 않은 것
+
+- 위 **이름 변경 제안**과 **쓰기 책임 제안** 확정
+- `work_type`(공고유형) 분류 규칙, `document_template_item`·`license_equivalence` 시드 데이터
+- 다중 사용자(`company_user`) — 정의서 §9 후속
+- 운영 DB를 PostgreSQL로 옮길지 (기획서 5장) — 표준 SQL 위주로 작성, `GENERATED` 컬럼·`datetime('now')`만 SQLite 전용
