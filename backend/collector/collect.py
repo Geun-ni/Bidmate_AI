@@ -25,7 +25,8 @@ from backend.collector import clients
 from backend.collector.doc_reader import detect_ext, read_document
 
 ROOT = Path(__file__).resolve().parents[2]
-SCHEMA = Path(__file__).with_name("schema.sql")
+SCHEMA = ROOT / "backend" / "db" / "schema.sql"
+OPEN_STATES = ("PreAttendProgress", "AttendProgress")  # 공고진행·입찰진행 (마감·유찰·개찰·종료 제외)
 CATEGORIES = ("LICENSE", "QUALIFIED", "REGION", "LICENSE_MAIN")
 # SRM 응답에 섞여 오는 담당자 개인정보는 저장하지 않는다
 PERSONAL_KEY = re.compile(r"creator|updater|representative|phone|email|fax|contact|userId|userName", re.I)
@@ -78,20 +79,24 @@ def connect(db_path):
 def upsert_notice(db, row):
     t = now()
     db.execute("""
-        INSERT INTO bid_notice (notice_no, title, purchase_type, item_type, bid_type, competition_type, place_name,
-            notice_date, attend_req_close_at, bid_begin_at, bid_end_at, progress_state, presumed_price,
-            estimated_price_basic_amount, presumed_amount, api_raw, first_seen_at, updated_at)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        INSERT INTO bid_notice (notice_no, company_id_src, title, purchase_type, item_type, bid_type,
+            competition_type, place_name, notice_date, attend_req_begin_at, attend_req_close_at, bid_begin_at,
+            bid_end_at, progress_state, presumed_price, estimated_price_basic_amount, approximate_amount,
+            presumed_amount, api_raw, first_seen_at, updated_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         ON CONFLICT(notice_no) DO UPDATE SET title=excluded.title, progress_state=excluded.progress_state,
-            attend_req_close_at=excluded.attend_req_close_at, bid_begin_at=excluded.bid_begin_at,
-            bid_end_at=excluded.bid_end_at, presumed_price=excluded.presumed_price,
-            estimated_price_basic_amount=excluded.estimated_price_basic_amount,
-            presumed_amount=excluded.presumed_amount, api_raw=excluded.api_raw, updated_at=excluded.updated_at
-    """, (row["no"], row.get("name") or "", row.get("purchaseType"), row.get("itemType"), row.get("bidType"),
-          row.get("competitionType"), row.get("placeName"), row.get("noticeDate"),
-          row.get("bidAttendReqCloseDatetime"), row.get("beginDatetime"), row.get("endDatetime"),
-          row.get("progressState"), to_int(row.get("presumedPrice")), to_int(row.get("estimatedPriceBasicAmount")),
-          to_int(row.get("presumedAmount")), json.dumps(row, ensure_ascii=False), t, t))
+            attend_req_begin_at=excluded.attend_req_begin_at, attend_req_close_at=excluded.attend_req_close_at,
+            bid_begin_at=excluded.bid_begin_at, bid_end_at=excluded.bid_end_at,
+            presumed_price=excluded.presumed_price, estimated_price_basic_amount=excluded.estimated_price_basic_amount,
+            approximate_amount=excluded.approximate_amount, presumed_amount=excluded.presumed_amount,
+            api_raw=excluded.api_raw, updated_at=excluded.updated_at
+    """, (row["no"], row.get("companyId") or "COM01", row.get("name") or "", row.get("purchaseType"),
+          row.get("itemType"), row.get("bidType"), row.get("competitionType"), row.get("placeName"),
+          row.get("noticeDate"), row.get("bidAttendReqBeginDatetime"), row.get("bidAttendReqCloseDatetime"),
+          row.get("beginDatetime"), row.get("endDatetime"), row.get("progressState"),
+          to_int(row.get("presumedPrice")), to_int(row.get("estimatedPriceBasicAmount")),
+          to_int(row.get("approximateAmount")), to_int(row.get("presumedAmount")),
+          json.dumps(row, ensure_ascii=False), t, t))
 
 
 def is_done(db, notice_no):
@@ -206,6 +211,12 @@ def collect_srm(db, srm, notice_no, found_kinds):
             db.execute("""INSERT INTO bid_restriction_item (notice_no, category, code, name, area_code,
                           sub_area_code, sub_area_name) VALUES (?,?,?,?,?,?,?)""", (notice_no, cat, *values))
 
+    # A금액·순공사원가·개찰일시 (SRM 상세에만 있는 값, 없으면 NULL 유지)
+    db.execute("""UPDATE bid_notice SET a_amount=COALESCE(?, a_amount),
+                  net_construction_cost=COALESCE(?, net_construction_cost),
+                  open_bid_at=COALESCE(?, open_bid_at) WHERE notice_no=?""",
+               (to_int(basic.get("totalAAmt")), to_int(basic.get("overHeadCostAmount")),
+                basic.get("openBidDateTime"), notice_no))
     evals = {k: basic.get(camel(k)) for k in EVAL_KEYS}
     raw = {"search": sanitize({k: row.get(k) for k in ("announceNo", "areaCodeName", "limitedReasonCode")}),
            "basic": {camel(k): v for k, v in evals.items()}, "items": sanitize(items)}
@@ -249,10 +260,11 @@ def process_notice(db, srm, row):
 
 def main():
     ap = argparse.ArgumentParser(description="SRM 공고 수집 (API 우선 + SRM 보완, 공고당 1회)")
-    ap.add_argument("--db", default=str(ROOT / "bidmate_collect.sqlite3"))
+    ap.add_argument("--db", default=str(ROOT / "bidmate.sqlite3"))
     ap.add_argument("--days", type=int, default=7, help="Open API 조회 기간(일, 최대 90)")
     ap.add_argument("--limit", type=int, default=5, help="이번 실행에서 처리할 신규 공고 수")
-    ap.add_argument("--bid-type", default="QualifiedEval", help="낙찰방법 필터, 'all'이면 전체")
+    ap.add_argument("--bid-type", default="all", help="낙찰방법 필터 (예: QualifiedEval), 'all'이면 전체")
+    ap.add_argument("--include-closed", action="store_true", help="마감·개찰·종료 공고도 처리")
     ap.add_argument("--notice", nargs="*", help="특정 공고번호만 처리")
     ap.add_argument("--interval", type=float, default=3.0, help="SRM 요청 간격(초)")
     ap.add_argument("--refresh", action="store_true", help="이미 수집한 공고도 다시 처리")
@@ -261,8 +273,11 @@ def main():
     db = connect(args.db)
     run_id = db.execute("INSERT INTO collect_run (started_at) VALUES (?)", (now(),)).lastrowid
     rows = clients.fetch_open_api_notices(clients.load_api_key(ROOT), days=args.days)
-    for row in rows:
-        upsert_notice(db, row)
+    wanted = set(args.notice or [])
+    for row in rows:  # 자재구매(Product)·타 발주사 공고는 저장하지 않음 (직접 지정한 공고는 예외)
+        if row["no"] in wanted or (row.get("purchaseType") == "ConstructionService"
+                                   and row.get("companyId", "COM01") == "COM01"):
+            upsert_notice(db, row)
     db.commit()
 
     if args.notice:
@@ -271,7 +286,19 @@ def main():
         if missing:
             print(f"Open API 조회 기간에 없는 공고: {sorted(missing)} (--days 를 늘려 보세요)")
     else:
-        targets = [r for r in rows if args.bid_type == "all" or r.get("bidType") == args.bid_type]
+        # 팀 결정: 한전(COM01) 공사용역 공고, 진행 중인 공고만.
+        # progressState 는 마감 후에도 'AttendProgress'로 남는 경우가 많아 입찰참가신청 마감 일시도 확인
+        today = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        def is_open(r):
+            close = r.get("bidAttendReqCloseDatetime")
+            return r.get("progressState") in OPEN_STATES and (not close or close >= today)
+
+        targets = [r for r in rows
+                   if r.get("companyId", "COM01") == "COM01"
+                   and r.get("purchaseType") == "ConstructionService"
+                   and (args.include_closed or is_open(r))
+                   and (args.bid_type == "all" or r.get("bidType") == args.bid_type)]
         targets.sort(key=lambda r: r.get("createDatetime") or "", reverse=True)
     if not args.refresh:
         targets = [r for r in targets if not is_done(db, r["no"])]

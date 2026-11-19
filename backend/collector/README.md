@@ -16,12 +16,12 @@ LLM 요약·구조화 추출은 AI 파트에서 `bid_document_content`의 `text`
 ```bash
 python -m pip install -r backend/collector/requirements.txt
 # 프로젝트 루트 .env 에 SRM_API_KEY=발급키 (git 제외)
-python -m backend.collector.collect --days 7 --limit 5            # 최근 7일 적격심사 공고 중 신규 5건
+python -m backend.collector.collect --days 7 --limit 5            # 최근 7일 진행 중 공사용역 공고 중 신규 5건
 python -m backend.collector.collect --notice E012607925           # 특정 공고
-python -m backend.collector.collect --bid-type all --limit 10     # 낙찰방법 무관
+python -m backend.collector.collect --bid-type QualifiedEval      # 적격심사 공고만
 ```
 
-- DB 기본 경로: 저장소 루트 `bidmate_collect.sqlite3` (git 제외, `--db`로 변경)
+- DB 기본 경로: 저장소 루트 `bidmate.sqlite3` (git 제외, `--db`로 변경)
 - 다운로드 파일: `downloads/<공고번호>/` (git 제외)
 - 이미 수집이 끝난 공고는 건너뛴다(`--refresh`로 재수집). 실패·부분 수집 공고는 다음 실행에서 다시 시도한다.
 
