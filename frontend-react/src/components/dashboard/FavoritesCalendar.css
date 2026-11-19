@@ -1,0 +1,36 @@
+.cal-nav { display: flex; align-items: center; gap: 2px; }
+.cal-month { font-weight: 700; min-width: 64px; text-align: center; }
+.cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
+.cal-wd { text-align: center; font-size: .72rem; color: var(--text-3); padding-bottom: 4px; }
+.cal-wd.sun { color: var(--danger); }
+.cal-wd.sat { color: var(--brand); }
+.cal-day { aspect-ratio: 1 / 1; min-height: 34px; display: grid; grid-template-rows: 1fr auto; justify-items: center; align-items: center; padding: 2px 0 4px; border: 0; border-radius: 8px; background: transparent; cursor: pointer; font-size: .84rem; }
+.cal-day:hover { background: var(--surface-2); }
+.cal-day.out { color: var(--text-3); opacity: .5; }
+.cal-day.today > .num { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: var(--brand); color: var(--brand-ink); font-weight: 700; }
+.cal-day.sel { background: var(--brand-soft); box-shadow: inset 0 0 0 1.5px var(--brand); }
+.cal-dots { display: flex; gap: 2px; height: 6px; }
+.cal-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; flex: none; }
+.tone-warn { background: var(--warn); }
+.tone-danger { background: var(--danger); }
+.tone-brand { background: var(--brand); }
+.cal-legend { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 10px; }
+.cal-legend li { display: inline-flex; align-items: center; gap: 4px; }
+
+.cal-agenda { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); display: grid; gap: 6px; }
+.cal-agenda ul { display: grid; gap: 4px; }
+.agenda-item { display: flex; gap: 8px; align-items: flex-start; padding: 8px; border-radius: 8px; text-decoration: none; color: var(--text); }
+.agenda-item:hover { background: var(--surface-2); }
+.agenda-item .cal-dot { margin-top: .5em; }
+.agenda-text { display: grid; min-width: 0; }
+.agenda-label { font-size: .78rem; color: var(--text-2); font-weight: 650; }
+.agenda-title { font-size: .88rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* FUNC-016: 미확정 일정은 속이 빈 점 */
+.tone-accent { background: var(--accent); }
+.cal-dot.unconfirmed { background: transparent !important; box-shadow: inset 0 0 0 1.5px currentColor; }
+.cal-dot.tone-warn.unconfirmed { color: var(--warn); }
+.cal-dot.tone-danger.unconfirmed { color: var(--danger); }
+.cal-dot.tone-brand.unconfirmed { color: var(--text); }
+.cal-dot.tone-accent.unconfirmed { color: var(--accent); }
+.agenda-src { font-size: .72rem; color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
