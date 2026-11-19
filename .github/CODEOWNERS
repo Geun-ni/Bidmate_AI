@@ -1,0 +1,7 @@
+# PR 리뷰어 자동 지정
+# 모든 파일 변경에 팀원 4명을 코드 오너로 지정한다.
+# GitHub은 PR 작성자 본인을 리뷰 요청에서 자동으로 제외하므로, 매 PR마다 작성자를 뺀 나머지 팀원 전원이 리뷰어가 된다.
+# 팀원: 이정근(Geun-ni), 곽영래(k4878990), 조용희(choyonghee0538-create), 강보라(kanginha0624-star)
+# 이 파일은 main 에 병합된 뒤 새로 만드는 PR부터 적용된다.
+
+* @Geun-ni @k4878990 @choyonghee0538-create @kanginha0624-star
