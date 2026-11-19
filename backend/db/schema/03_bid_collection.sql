@@ -34,6 +34,12 @@ CREATE TABLE IF NOT EXISTS bid_notice (
     notice_doc_found              INTEGER CHECK (notice_doc_found IN (0, 1)),    -- 공고문 확보 (NULL=미확인)
     criteria_doc_found            INTEGER CHECK (criteria_doc_found IN (0, 1)),  -- 적격심사기준 확보
     api_raw                       TEXT NOT NULL,        -- Open API 응답 원본(JSON)
+    -- 정정 공고 감지 (init_db.py 마이그레이션이 기존 DB에도 같은 컬럼을 추가함)
+    api_created_at                TEXT,                 -- Open API createDatetime. 정정되면 더 늦은 값이 새로 옴
+    srm_revision                  TEXT,                 -- SRM 정정 차수 (findBidBasicInfo, 수집 시점 기록)
+    needs_recollect               INTEGER NOT NULL DEFAULT 0 CHECK (needs_recollect IN (0, 1)),
+    recollect_reason              TEXT,
+    last_collected_at             TEXT,                 -- 투찰제한·첨부를 마지막으로 수집한 시각
     first_seen_at                 TEXT NOT NULL,
     updated_at                    TEXT NOT NULL
 );

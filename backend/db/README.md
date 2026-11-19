@@ -23,6 +23,7 @@ python -m backend.collector.collect --limit 5         # ④ 공고 수집
   db = init_db(DEFAULT_DB_PATH)
   ```
 - **다시 실행해도 안전:** 테이블은 `CREATE TABLE IF NOT EXISTS`라 기존 데이터가 유지되고, 뷰(07)만 지웠다가 다시 만든다(데이터 없음). 시드는 UPSERT라 여러 번 실행해도 같다.
+- **컬럼 추가는 `init_db.py`의 `COLUMN_MIGRATIONS`에도 등록한다.** `CREATE TABLE IF NOT EXISTS`는 이미 있는 테이블에 새 컬럼을 더하지 않으므로, SQL 파일에 컬럼을 추가하면 같은 정의를 이 목록에 넣어 기존 DB에도 `ALTER TABLE ADD COLUMN`이 적용되게 한다. 현재 등록: `bid_notice`의 정정 감지 컬럼 5개.
 
 ## 2. 파일 구조 (적용 순서 = 외래키·뷰 의존 순서)
 
@@ -50,7 +51,7 @@ python -m backend.collector.collect --limit 5         # ④ 공고 수집
 | `license_equivalence` | 예정: 시드 (감리 전력종합 → 전력전문) | 팀 정리본 (대표 공고 감리용역) | 예정: 룰 엔진 |
 | `company`, `company_license`, `company_restricted_qualification` | 예정: 업체정보 API ← 프론트 업체정보 입력(UI-02) | 사용자 입력 (가상 업체만) | 예정: 룰 엔진 |
 | `company_notification_setting` | 예정: 알림 설정 API ← 프론트 알림 설정(UI-07) | 사용자 입력 | 예정: 알림 발송 모듈 |
-| `bid_notice` | `collect.py` ✅ (`upsert_notice`, SRM 금액·개찰일 갱신) | Open API + SRM `findBidBasicInfo` | `collect.py`(재수집 여부), 07 뷰, 예정: 공고 API |
+| `bid_notice` | `collect.py` ✅ (`upsert_notice`, SRM 금액·개찰일·정정 차수 갱신, 정정 감지 표시) | Open API + SRM `findBidBasicInfo` | `collect.py`(재수집 여부), 07 뷰, 예정: 공고 API |
 | `bid_restriction_snapshot`, `bid_restriction_category`, `bid_restriction_item` | `collect.py` ✅ (`collect_srm`) | SRM `/router` 투찰제한 | `collect.py`(`is_done`), 예정: 룰 엔진·요약 탭 API |
 | `bid_attachment` | `collect.py` ✅ (`save_attachment`) | Open API `filenlink` / SRM 첨부 | 예정: AI 문서 분석, 공고 상세 API |
 | **`bid_document_content`** | `collect.py` ✅ (`save_content`) — 해석 없이 원문만 | 다운로드한 HWP/HWPX/PDF | 예정: AI 파트 (LLM 입력) |
@@ -127,6 +128,8 @@ python -m backend.collector.collect --limit 5         # ④ 공고 수집
 | ④ 수집 저장 | E012608220: 면허 A06·지역 C, 사정액 271,946,271, A금액 10,171,627, 순공사원가 131,079,269, 개찰 11-26, 첨부 2종·원문 저장 |
 | ⑤ 추천 뷰 | 가상 업체 + 판정 2건 중 신청 마감 전 공고만 조회, 별표 반영 |
 | 재초기화 | 새 DB(업체가 면허 참조 중)에 `init_db`+`seed_reference` 재실행, 구 `schema.sql`로 만든 DB에 `init_db` 실행 → 두 DB 모두 행 수 변화 없음, 외래키 위반 0, 뷰 갱신 |
+| 컬럼 마이그레이션 | 정정 감지 컬럼이 없던 DB(957건)에 `init_db` → 5개 컬럼 추가, `api_created_at` 957건·`last_collected_at` 1건 채움, 행 수 변화 없음, 재실행해도 동일 |
+| 정정 재수집 | 등록일시가 더 늦은 API 행 → 재수집 표시, 이른 행·같은 행은 무시. 재수집 시 정정으로 빠진 첨부 삭제·남은 첨부 행 id 유지·내용 바뀐 경우만 `notice_analysis_cache` 무효화. 실제 SRM 재수집(E012608220)에서 차수 `1` 저장·표시 해제 |
 | 제약 | 없는 시군구, 광역과 맞지 않는 시군구, 사업자번호 형식, 없는 면허, 면허 중복, 판정 상태 오타 → 저장 차단 |
 
 참고: 시드를 `INSERT OR REPLACE`에서 UPSERT로 바꿨다. 현재 외래키는 `NO ACTION`이라 REPLACE도 실패하지는 않지만, 나중에 `ON DELETE CASCADE`가 붙으면 REPLACE가 참조 행(업체 면허 등)을 조용히 지운다.

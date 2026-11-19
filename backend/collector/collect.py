@@ -100,7 +100,12 @@ def is_open(row, now_text=None):
 
 # ---------------------------------------------------------------- 저장
 def upsert_notice(db, row):
+    """API 행 저장/갱신. createDatetime 이 저장값보다 늦으면 정정 공고로 보고 재수집 표시.
+    → 정정으로 판단했으면 True."""
     t = now()
+    created = row.get("createDatetime")
+    prev = db.execute("SELECT api_created_at FROM bid_notice WHERE notice_no=?", (row["no"],)).fetchone()
+    corrected = bool(prev and prev[0] and created and created > prev[0])
     db.execute("""
         INSERT INTO bid_notice (notice_no, company_id_src, title, purchase_type, item_type, bid_type,
             competition_type, place_name, notice_date, attend_req_begin_at, attend_req_close_at, bid_begin_at,
@@ -120,13 +125,28 @@ def upsert_notice(db, row):
           to_int(row.get("presumedPrice")), to_int(row.get("estimatedPriceBasicAmount")),
           to_int(row.get("approximateAmount")), to_int(row.get("presumedAmount")),
           json.dumps(row, ensure_ascii=False), t, t))
+    # 기준값은 더 늦은 값으로만 갱신 (이전 차수 행이 늦게 와도 되돌아가지 않게)
+    db.execute("UPDATE bid_notice SET api_created_at=? WHERE notice_no=? "
+               "AND (api_created_at IS NULL OR api_created_at < ?)", (created, row["no"], created))
+    if corrected:
+        db.execute("UPDATE bid_notice SET needs_recollect=1, recollect_reason=? WHERE notice_no=?",
+                   (f"Open API 등록일시 변경 {prev[0]} → {created}", row["no"]))
+    return corrected
 
 
 def is_done(db, notice_no):
+    """수집 완료 = 투찰제한 SUCCESS + 문서 확보 여부 확인 + 정정 재수집 표시 없음."""
     snap = db.execute("SELECT fetch_status FROM bid_restriction_snapshot WHERE notice_no=?", (notice_no,)).fetchone()
-    docs = db.execute("SELECT notice_doc_found, criteria_doc_found FROM bid_notice WHERE notice_no=?",
-                      (notice_no,)).fetchone()
-    return bool(snap and snap[0] == "SUCCESS" and docs and None not in docs)
+    row = db.execute("SELECT notice_doc_found, criteria_doc_found, needs_recollect FROM bid_notice "
+                     "WHERE notice_no=?", (notice_no,)).fetchone()
+    return bool(snap and snap[0] == "SUCCESS" and row and None not in row[:2] and not row[2])
+
+
+def attachment_version(db, notice_no):
+    """첨부 내용 버전: 성공한 첨부의 sha256 을 정렬해 이은 값 (notice_analysis_cache.document_version 과 같은 정의)."""
+    shas = [r[0] for r in db.execute("SELECT sha256 FROM bid_attachment WHERE notice_no=? AND sha256 IS NOT NULL "
+                                     "ORDER BY sha256", (notice_no,))]
+    return ",".join(shas)
 
 
 def save_attachment(db, notice_no, kind, filename, source, data=None, error=None):
@@ -234,12 +254,14 @@ def collect_srm(db, srm, notice_no, found_kinds):
             db.execute("""INSERT INTO bid_restriction_item (notice_no, category, code, name, area_code,
                           sub_area_code, sub_area_name) VALUES (?,?,?,?,?,?,?)""", (notice_no, cat, *values))
 
-    # A금액·순공사원가·개찰일시 (SRM 상세에만 있는 값, 없으면 NULL 유지)
+    # A금액·순공사원가·개찰일시·정정 차수 (SRM 상세에만 있는 값, 없으면 기존 값 유지)
+    revision = basic.get("bidRevision", basic.get("revision"))
     db.execute("""UPDATE bid_notice SET a_amount=COALESCE(?, a_amount),
                   net_construction_cost=COALESCE(?, net_construction_cost),
-                  open_bid_at=COALESCE(?, open_bid_at) WHERE notice_no=?""",
+                  open_bid_at=COALESCE(?, open_bid_at), srm_revision=COALESCE(?, srm_revision)
+                  WHERE notice_no=?""",
                (to_int(basic.get("totalAAmt")), to_int(basic.get("overHeadCostAmount")),
-                basic.get("openBidDateTime"), notice_no))
+                basic.get("openBidDateTime"), None if revision is None else str(revision), notice_no))
     evals = {k: basic.get(camel(k)) for k in EVAL_KEYS}
     raw = {"search": sanitize({k: row.get(k) for k in ("announceNo", "areaCodeName", "limitedReasonCode")}),
            "basic": {camel(k): v for k, v in evals.items()}, "items": sanitize(items)}
@@ -270,6 +292,8 @@ def collect_srm(db, srm, notice_no, found_kinds):
 
 def process_notice(db, srm, row):
     notice_no = row["no"]
+    started = now()
+    old_version = attachment_version(db, notice_no)
     found = collect_api_documents(db, row)
     db.commit()
     try:
@@ -278,11 +302,22 @@ def process_notice(db, srm, row):
         db.execute("UPDATE bid_notice SET notice_doc_found=?, criteria_doc_found=? WHERE notice_no=?",
                    (int("NOTICE" in found), int("CRITERIA" in found), notice_no))
         db.commit()
+    snap = db.execute("SELECT fetch_status FROM bid_restriction_snapshot WHERE notice_no=?", (notice_no,)).fetchone()
+    if snap and snap[0] == "SUCCESS":
+        # 이번 수집에서 다시 받지 않은 첨부 = 정정으로 빠진 파일 → 삭제 (원문은 CASCADE, AI 추출은 SET NULL)
+        db.execute("DELETE FROM bid_attachment WHERE notice_no=? AND fetched_at < ?", (notice_no, started))
+        # 첨부 내용이 바뀌었으면 AI 분석 캐시 무효화 → AI 파트가 재분석 대상으로 인식
+        if old_version and attachment_version(db, notice_no) != old_version:
+            db.execute("UPDATE notice_analysis_cache SET analysis_status='INVALIDATED', invalidated_at=? "
+                       "WHERE notice_no=? AND analysis_status <> 'INVALIDATED'", (now(), notice_no))
+        db.execute("UPDATE bid_notice SET needs_recollect=0, recollect_reason=NULL, last_collected_at=? "
+                   "WHERE notice_no=?", (now(), notice_no))
+        db.commit()
     return found
 
 
 def main():
-    ap = argparse.ArgumentParser(description="SRM 공고 수집 (API 우선 + SRM 보완, 공고당 1회)")
+    ap = argparse.ArgumentParser(description="SRM 공고 수집 (API 우선 + SRM 보완, 공고당 1회 + 정정 시 재수집)")
     ap.add_argument("--db", default=str(DEFAULT_DB_PATH))
     ap.add_argument("--days", type=int, default=7, help="Open API 조회 기간(일, 최대 90)")
     ap.add_argument("--limit", type=int, default=5, help="이번 실행에서 처리할 신규 공고 수")
@@ -297,10 +332,14 @@ def main():
     run_id = db.execute("INSERT INTO collect_run (started_at) VALUES (?)", (now(),)).lastrowid
     rows = latest_per_notice(clients.fetch_open_api_notices(clients.load_api_key(ROOT), days=args.days))
     wanted = set(args.notice or [])
+    corrected = []
     for row in rows:  # 서비스 범위 밖 공고는 저장하지 않음 (직접 지정한 공고는 예외)
-        if row["no"] in wanted or in_scope(row):
-            upsert_notice(db, row)
+        if (row["no"] in wanted or in_scope(row)) and upsert_notice(db, row):
+            corrected.append(row["no"])
     db.commit()
+    if corrected:
+        print(f"정정 감지 {len(corrected)}건 (재수집 표시): {', '.join(corrected[:10])}")
+    flagged = {r[0] for r in db.execute("SELECT notice_no FROM bid_notice WHERE needs_recollect=1")}
 
     if args.notice:
         targets = [r for r in rows if r["no"] in wanted]
@@ -309,14 +348,18 @@ def main():
             print(f"Open API 조회 기간에 없는 공고: {sorted(missing)} (--days 를 늘려 보세요)")
     else:
         targets = [r for r in rows if in_scope(r) and (args.include_closed or is_open(r))]
-        targets.sort(key=lambda r: r.get("createDatetime") or "", reverse=True)
+        # 정정 재수집 공고를 먼저, 그다음 최신 등록 순
+        targets.sort(key=lambda r: (r["no"] in flagged, r.get("createDatetime") or ""), reverse=True)
     if not args.refresh:
         targets = [r for r in targets if not is_done(db, r["no"])]
     targets = targets[:args.limit] if not args.notice else targets
-    print(f"Open API 공고 {len(rows)}건 → 서비스 범위 {sum(map(in_scope, rows))}건 → 이번 처리 대상 {len(targets)}건")
+    print(f"Open API 공고 {len(rows)}건 → 서비스 범위 {sum(map(in_scope, rows))}건 → 이번 처리 대상 {len(targets)}건"
+          f" (정정 재수집 {sum(r['no'] in flagged for r in targets)}건)")
     if args.dry_run:
         for r in targets:
-            print(f"  {r['no']} {r.get('bidType')} 신청마감={r.get('bidAttendReqCloseDatetime')} {r.get('name', '')[:30]}")
+            mark = "[정정] " if r["no"] in flagged else ""
+            print(f"  {mark}{r['no']} {r.get('bidType')} 신청마감={r.get('bidAttendReqCloseDatetime')} "
+                  f"{r.get('name', '')[:30]}")
         db.execute("UPDATE collect_run SET finished_at=?, api_notice_count=?, target_count=?, processed_count=0, "
                    "stopped_reason='dry-run' WHERE id=?", (now(), len(rows), len(targets), run_id))
         db.commit()
