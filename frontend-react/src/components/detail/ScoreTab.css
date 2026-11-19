@@ -1,0 +1,105 @@
+.score { display: grid; gap: 14px; }
+
+.score-summary { position: sticky; top: calc(var(--header-h) + 8px); z-index: 5; display: grid; grid-template-columns: auto auto 1fr; gap: 6px 28px; align-items: center; border-color: var(--brand); }
+.score-summary .total { font-size: 1rem; }
+.score-summary .total strong { font-size: 2rem; letter-spacing: -.02em; }
+.score-summary .total.pending { font-size: 1.3rem; font-weight: 800; color: var(--warn); }
+.score-summary .pass strong { font-size: 1.3rem; }
+.score-summary .verdict { justify-self: end; text-align: right; }
+.score-summary .span-all { grid-column: 1 / -1; }
+
+.score-val strong { font-size: 1.2rem; }
+
+.price-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px 16px; margin: 14px 0 10px; }
+.price-grid.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.money-wrap { position: relative; }
+.money-wrap .input { padding-right: 32px; }
+.money-unit { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); color: var(--text-3); font-size: .88rem; }
+.auto-val { height: 40px; display: flex; align-items: center; padding: 0 12px; border-radius: var(--radius-sm); background: var(--surface-2); border: 1px dashed var(--border-strong); font-weight: 700; }
+.auto-val.missing { color: var(--danger); background: var(--danger-soft); border-color: transparent; }
+
+.formula { margin-top: 10px; padding: 10px 12px; border-radius: 10px; background: var(--surface-2); font-size: .86rem; }
+.formula summary { cursor: pointer; font-weight: 650; color: var(--text-2); }
+.formula p { margin-top: 6px; }
+
+.cap-item { padding-top: 14px; margin-top: 14px; border-top: 1px solid var(--border); display: grid; gap: 8px; }
+.cap-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.cap-head h3 { font-size: .95rem; }
+.option-list { display: grid; gap: 6px; }
+.option { display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: center; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; cursor: pointer; font-size: .9rem; }
+.option.on { border-color: var(--brand); background: var(--brand-soft); }
+.option input { margin: 0; accent-color: var(--brand); }
+
+.adj-list { display: grid; margin-top: 8px; }
+.adj-list li { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--border); }
+.adj-list li:last-child { border-bottom: 0; }
+.adj-list li.separate { margin-top: 6px; padding-top: 14px; border-top: 2px solid var(--border); }
+.adj-label { font-weight: 600; font-size: .92rem; }
+.plus { color: var(--ok); margin-left: 4px; }
+.minus { color: var(--danger); margin-left: 4px; }
+.yn { display: inline-flex; border: 1px solid var(--border); border-radius: 999px; padding: 2px; background: var(--surface-2); flex: none; }
+.yn-opt { font-weight: 650; padding: 4px 12px; border-radius: 999px; cursor: pointer; font-size: .82rem; color: var(--text-2); }
+.yn-opt input { position: absolute; opacity: 0; pointer-events: none; }
+.yn-opt.on { background: var(--surface); color: var(--text); box-shadow: var(--shadow); }
+.yn-opt:has(input:focus-visible) { box-shadow: var(--focus); }
+
+@media (max-width: 760px) {
+  .score-summary { position: static; grid-template-columns: 1fr 1fr; }
+  .score-summary .verdict { grid-column: 1 / -1; justify-self: start; text-align: left; }
+  .price-grid, .price-grid.two { grid-template-columns: 1fr; }
+  .adj-list li { flex-direction: column; }
+}
+
+/* 값이 '미산정' ↔ 숫자로 바뀌어도 줄 높이가 흔들리지 않게 고정 */
+.score .card-head { min-height: 34px; }
+.score-summary .total { display: flex; align-items: baseline; gap: 2px; min-height: 3.1rem; line-height: 1.2; }
+.score-summary .total.pending { align-items: center; }
+.score-summary .verdict { min-height: 2.6rem; display: flex; align-items: center; justify-content: flex-end; }
+.cap-head { min-height: 32px; }
+@media (max-width: 760px) {
+  .score-summary .verdict { justify-content: flex-start; }
+}
+
+/* 남은 항목이 줄어도 요약 카드 높이가 바뀌지 않도록 한 줄로 고정 */
+.score-summary .verdict { min-width: 0; }
+.pending-line { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.score-summary { grid-template-columns: auto auto minmax(0, 1fr); }
+.score-summary > * { min-width: 0; }
+@media (max-width: 760px) {
+  .score-summary { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+}
+.score-summary .verdict { justify-self: stretch; }
+.score-summary .verdict > * { min-width: 0; }
+
+/* 계기판 */
+.sum-main { display: flex; align-items: center; gap: 14px; }
+.gauge { width: 96px; height: auto; flex: none; }
+.gauge-needle { transform-origin: 50px 50px; transform-box: view-box; transition: transform 1.2s var(--ease), stroke .3s; }
+.score-summary { border-color: var(--border-strong); }
+.score-summary .total strong { color: var(--text); }
+.option.on { border-color: var(--ink); background: var(--soft); }
+.option { border-radius: var(--radius-sm); transition: border-color .2s, background .2s; }
+.yn { border-radius: var(--pill); }
+.yn-opt.on { background: var(--ink); color: var(--ink-text); box-shadow: none; }
+.auto-val { border-radius: var(--radius-sm); }
+@media (max-width: 760px) { .gauge { width: 72px; } }
+
+/* FUNC-019 재무비율 / FUNC-022 등급·횟수 */
+.cap-item .option-list { margin-top: 10px; }
+.ratio-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 12px; }
+.unit-wrap { position: relative; display: block; }
+.unit-wrap .input { padding-right: 34px; }
+.adj-right { display: grid; justify-items: end; gap: 8px; }
+.adj-detail { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; justify-content: flex-end; }
+.adj-count { display: inline-flex; align-items: center; gap: 6px; }
+.adj-count .input { width: 72px; height: 34px; text-align: right; }
+@media (max-width: 760px) {
+  .ratio-grid { grid-template-columns: minmax(0, 1fr); }
+  .adj-right { justify-items: start; }
+  .adj-detail { justify-content: flex-start; }
+}
+
+/* 산정 보류 중 현재 점수 */
+.score-summary .total.tentative { display: flex; align-items: center; gap: 8px; min-height: 3.1rem; }
+.score-summary .total.tentative strong { font-size: 2rem; color: var(--text-2); letter-spacing: -.02em; }
+.max-short { color: var(--danger); font-weight: 650; }

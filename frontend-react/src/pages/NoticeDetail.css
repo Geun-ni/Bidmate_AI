@@ -1,0 +1,59 @@
+.detail { display: grid; gap: 14px; max-width: 1040px; margin-inline: auto; }
+.detail-nav { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.back-btn { font-weight: 650; }
+.breadcrumb { color: var(--text-3); display: flex; gap: 6px; }
+.breadcrumb a { color: var(--text-2); text-decoration: none; }
+.breadcrumb a:hover { text-decoration: underline; }
+
+.detail-head { display: grid; gap: 10px; }
+.dh-top { display: flex; justify-content: space-between; gap: 8px; }
+.nc-badges { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.dh-title { font-size: clamp(1.5rem, 3.4vw, 2.1rem); letter-spacing: -.04em; line-height: 1.25; font-weight: 800; }
+.dh-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px 16px; padding: 12px 0; border-block: 1px solid var(--border); }
+.dh-facts dt { font-size: .76rem; color: var(--text-3); }
+.dh-facts dd { font-size: .9rem; font-weight: 650; }
+.dh-facts dd .muted { display: block; font-weight: 500; }
+
+.stepper { display: grid; grid-template-columns: repeat(5, 1fr); counter-reset: step; }
+.stepper li { position: relative; display: grid; justify-items: center; gap: 4px; text-align: center; font-size: .8rem; color: var(--text-3); }
+.stepper li::before { content: ""; position: absolute; top: 13px; left: -50%; right: 50%; height: 2px; background: var(--border); z-index: 0; }
+.stepper li:first-child::before { display: none; }
+/* 지나온 구간 선이 왼쪽에서 오른쪽으로 그려진다 (카드가 나타날 때) */
+.stepper li::after { content: ""; position: absolute; top: 13px; left: -50%; right: 50%; height: 2px; background: var(--ink); z-index: 0; transform: scaleX(0); transform-origin: left; transition: transform .7s var(--ease); }
+.stepper li:first-child::after { display: none; }
+.in .stepper li.done::after, .in .stepper li.current::after { transform: scaleX(1); }
+.in .stepper li:nth-child(2)::after { transition-delay: .35s; }
+.in .stepper li:nth-child(3)::after { transition-delay: .55s; }
+.in .stepper li:nth-child(4)::after { transition-delay: .75s; }
+.in .stepper li:nth-child(5)::after { transition-delay: .95s; }
+.step-dot { position: relative; z-index: 1; display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; background: var(--surface); border: 2px solid var(--border-strong); font-weight: 700; font-size: .8rem; }
+.stepper li.done .step-dot { background: var(--brand); border-color: var(--brand); color: var(--brand-ink); }
+.stepper li.current .step-dot { border-color: var(--ink); color: var(--text); box-shadow: 0 0 0 5px var(--accent-soft); }
+.stepper li.current { color: var(--text); }
+.stepper li { font-weight: 650; }
+
+.dh-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.dh-actions .spacer { flex: 1; }
+.doc-status { display: flex; flex-wrap: wrap; gap: 6px; }
+
+/* 탭: 원형 알약, 선택된 탭은 검은 알약 */
+.tabs { display: flex; gap: 2px; padding: 4px; border-radius: var(--pill); background: var(--soft); width: fit-content; max-width: 100%; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
+.tabs [role="tab"] { border: 0; background: transparent; height: 38px; padding: 0 18px; border-radius: var(--pill); font-weight: 700; color: var(--text-2); cursor: pointer; white-space: nowrap; transition: background .3s var(--ease), color .2s; }
+.tabs [role="tab"][aria-selected="true"] { background: var(--ink); color: var(--ink-text); }
+.tabs [role="tab"]:hover:not([aria-selected="true"]) { color: var(--text); }
+.tab-panel { display: grid; gap: 14px; }
+
+.section-title { font-size: 1.08rem; font-weight: 800; letter-spacing: -.02em; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.section-desc { color: var(--text-2); font-size: .86rem; margin-top: 2px; }
+
+.table-wrap { overflow-x: auto; margin-top: 12px; }
+.table { width: 100%; border-collapse: collapse; font-size: .88rem; }
+.table th, .table td { text-align: left; padding: 10px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+.table th { font-size: .76rem; color: var(--text-3); font-weight: 700; background: transparent; border-bottom-color: var(--border-strong); white-space: nowrap; }
+.table tr:last-child td { border-bottom: 0; }
+
+@media (max-width: 760px) {
+  .dh-facts { grid-template-columns: 1fr 1fr; }
+  .stepper { font-size: .72rem; }
+  .step-label { font-size: .7rem; }
+}

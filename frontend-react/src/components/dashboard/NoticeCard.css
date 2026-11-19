@@ -1,0 +1,40 @@
+.notice-card { position: relative; padding: 20px 22px; transition: transform .45s var(--ease), box-shadow .45s var(--ease), border-color .3s; }
+.notice-card:hover { transform: translateY(-3px); box-shadow: var(--shadow-hover); border-color: var(--border-strong); }
+.notice-card:focus-within { border-color: var(--text); }
+/* 왼쪽 판정 띠: 마우스를 올리면 위에서 아래로 그려진다 */
+.notice-card::before { content: ""; position: absolute; left: -1px; top: 18px; bottom: 18px; width: 3px; border-radius: 0 3px 3px 0; background: var(--edge, var(--border-strong)); transform: scaleY(.35); transform-origin: top; transition: transform .5s var(--ease); }
+.notice-card:hover::before, .notice-card:focus-within::before { transform: scaleY(1); }
+.notice-card.j-MATCH { --edge: var(--ok); }
+.notice-card.j-REVIEW { --edge: var(--warn); }
+.notice-card.j-MISMATCH { --edge: var(--danger); }
+.notice-card.is-inactive { opacity: .62; }
+.notice-card.is-inactive .nc-title { text-decoration: line-through; text-decoration-color: var(--text-3); }
+
+.nc-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
+.nc-badges { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.nc-title { margin-top: 10px; font-size: 1.12rem; letter-spacing: -.025em; line-height: 1.4; font-weight: 800; }
+.nc-meta .num { font-family: var(--mono); font-size: .8rem; }
+.nc-link { color: var(--text); text-decoration: none; }
+/* 카드 전체를 클릭 영역으로 (별표 버튼은 위에 올림) */
+.nc-link::after { content: ""; position: absolute; inset: 0; border-radius: inherit; }
+.nc-link:focus-visible { box-shadow: none; }
+.nc-link:focus-visible::after { box-shadow: var(--focus); }
+.notice-card .star { position: relative; z-index: 1; }
+.nc-meta { display: flex; flex-wrap: wrap; gap: 4px 6px; margin-top: 2px; }
+
+.nc-facts { display: grid; grid-template-columns: 1.6fr 1fr 1fr; gap: 8px 16px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); }
+.nc-facts dt { font-size: .75rem; color: var(--text-3); }
+.nc-facts dd { font-size: .9rem; font-weight: 650; }
+
+.nc-notes { display: grid; gap: 4px; margin-top: 10px; font-size: .82rem; }
+.nc-notes li { padding-left: 14px; position: relative; }
+.nc-notes li::before { content: ""; position: absolute; left: 2px; top: .55em; width: 6px; height: 6px; border-radius: 50%; }
+.note-warn { color: var(--warn); }
+.note-warn::before { background: var(--warn); }
+.note-danger { color: var(--danger); }
+.note-danger::before { background: var(--danger); }
+
+@media (max-width: 560px) {
+  .nc-facts { grid-template-columns: 1fr 1fr; }
+  .nc-facts > div:first-child { grid-column: 1 / -1; }
+}

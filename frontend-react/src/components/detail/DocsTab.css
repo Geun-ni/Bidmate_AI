@@ -1,0 +1,36 @@
+.doc-list { display: grid; margin-top: 8px; }
+.doc-list li { padding: 10px 0; border-bottom: 1px solid var(--border); display: grid; gap: 4px; }
+.doc-list li:last-child { border-bottom: 0; }
+.doc-check { display: flex; gap: 10px; align-items: center; cursor: pointer; font-weight: 600; }
+.doc-check input { width: 18px; height: 18px; margin: 0; accent-color: var(--ok); flex: none; }
+.doc-list li.is-done .doc-name { color: var(--text-3); text-decoration: line-through; }
+.doc-meta { padding-left: 28px; display: grid; gap: 4px; justify-items: start; }
+
+.cond-list { display: grid; gap: 12px; margin-top: 12px; }
+.cond-list li { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 10px; align-items: start; font-size: .9rem; }
+.cond-list .badge { justify-self: start; }
+.pass-score { margin-top: 10px; font-size: .95rem; }
+.pass-score strong { font-size: 1.3rem; color: var(--brand); margin-left: 4px; }
+
+@media (max-width: 560px) {
+  .cond-list li { grid-template-columns: 1fr; gap: 4px; }
+}
+
+/* ── FUNC-024/025: 상태 4가지 + 서류 상세 ── */
+.doc-list li { gap: 8px; padding: 14px 0; }
+.doc-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; }
+.doc-title { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-weight: 700; }
+.doc-ready .doc-name { color: var(--text-3); text-decoration: line-through; }
+.doc-na .doc-name { color: var(--text-3); }
+.doc-status-pick { display: inline-flex; gap: 2px; padding: 3px; border-radius: var(--pill); background: var(--soft); flex: none; }
+.dsp { height: 28px; padding: 0 11px; display: inline-flex; align-items: center; border-radius: var(--pill); font-size: .78rem; font-weight: 650; color: var(--text-2); cursor: pointer; transition: background .25s var(--ease), color .2s; }
+.dsp input { position: absolute; opacity: 0; pointer-events: none; }
+.dsp:has(input:focus-visible) { box-shadow: var(--focus); }
+.dsp.on { background: var(--ink); color: var(--ink-text); }
+.dsp-ok.on { background: var(--ok); color: #fff; }
+.dsp-warn.on { background: var(--warn); color: #fff; }
+.doc-info { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 6px 16px; margin: 0; font-size: .8rem; }
+.doc-info > div { display: grid; gap: 1px; }
+.doc-info dt { color: var(--text-3); font-size: .72rem; }
+.doc-info dd { color: var(--text-2); }
+@media print { .doc-status-pick .dsp:not(.on) { display: none; } }
