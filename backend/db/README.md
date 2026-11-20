@@ -110,7 +110,8 @@ python -m backend.collector.collect --limit 5         # ④ 공고 수집
 | 한전(`COM01`) 공사용역(`ConstructionService`) 중 **적격심사(`QualifiedEval`)** 공고만 | 수집기 `in_scope()` — 범위 밖 공고는 `bid_notice`에 저장하지 않음, 뷰에도 같은 조건 |
 | 진행 중 공고만 | `progress_state` + `attend_req_close_at` (API 상태만으로는 마감 공고가 섞임) |
 | 예비가격 기초금액 / 추정가격 / 사정액 | `estimated_price_basic_amount` / `presumed_price` / `approximate_amount` |
-| A금액(`totalAAmt`) / 순공사원가(`overHeadCostAmount`) | `a_amount` / `net_construction_cost` — SRM 상세 조회에 포함, 추가 요청 없음 |
+| A금액(`totalAAmt`) / 경비(`overHeadCostAmount`) | `a_amount` / `overhead_cost_amount` — SRM 상세 조회에 포함, 추가 요청 없음 |
+| 순공사원가(재료비+노무비+경비) | `net_construction_cost` — SRM에 값이 없어 수집기는 채우지 않음(NULL=미확인). 공고문 금액표 추출 방식은 팀 결정 |
 | 자동심사 조건: 면허자격명 / 적격자격명 / 지역 / 주력분야 | `bid_restriction_item.category` = `LICENSE` / `QUALIFIED` / `REGION` / `LICENSE_MAIN` |
 | 적격심사기준: 배점표, 입찰가격 산식, 해당/인접 사업소, 업종별 경영상태 평균비율 | `evaluation_rule.category` = `PERFORMANCE`·`PASS_SCORE` / `PRICE` / `OFFICE` / `MANAGEMENT` (세부는 `parameters` JSON) |
 | 제출서류: 계약부서/감독부서, "2가지 중 1가지" | `required_document_item.submit_to`, `alternative_group` |
@@ -125,7 +126,7 @@ python -m backend.collector.collect --limit 5         # ④ 공고 수집
 | ① 초기화 | 01~07 순서 적용, 테이블 28·뷰 1, `integrity_check=ok` |
 | ② 시드 | 면허 3,629 / 자격 20 / 상하위 21 / 지역그룹 18 / 시군구 253, 6자리 복원 확인(`F_011013` 춘천시) |
 | ③ 수집 범위 | 30일 API 1,724건 → 적격심사 공사용역 957건만 저장, 처리 대상은 신청 마감 전 공고만. 정정 중복(E012607113)은 최신 행 저장 |
-| ④ 수집 저장 | E012608220: 면허 A06·지역 C, 사정액 271,946,271, A금액 10,171,627, 순공사원가 131,079,269, 개찰 11-26, 첨부 2종·원문 저장 |
+| ④ 수집 저장 | E012608220: 면허 A06·지역 C, 사정액 271,946,271, A금액 10,171,627, 경비 131,079,269(당시 `net_construction_cost`에 잘못 저장 → 2026-11-20 정정), 개찰 11-26, 첨부 2종·원문 저장 |
 | ⑤ 추천 뷰 | 가상 업체 + 판정 2건 중 신청 마감 전 공고만 조회, 별표 반영 |
 | 재초기화 | 새 DB(업체가 면허 참조 중)에 `init_db`+`seed_reference` 재실행, 구 `schema.sql`로 만든 DB에 `init_db` 실행 → 두 DB 모두 행 수 변화 없음, 외래키 위반 0, 뷰 갱신 |
 | 컬럼 마이그레이션 | 정정 감지 컬럼이 없던 DB(957건)에 `init_db` → 5개 컬럼 추가, `api_created_at` 957건·`last_collected_at` 1건 채움, 행 수 변화 없음, 재실행해도 동일 |
@@ -133,6 +134,17 @@ python -m backend.collector.collect --limit 5         # ④ 공고 수집
 | 제약 | 없는 시군구, 광역과 맞지 않는 시군구, 사업자번호 형식, 없는 면허, 면허 중복, 판정 상태 오타 → 저장 차단 |
 
 참고: 시드를 `INSERT OR REPLACE`에서 UPSERT로 바꿨다. 현재 외래키는 `NO ACTION`이라 REPLACE도 실패하지는 않지만, 나중에 `ON DELETE CASCADE`가 붙으면 REPLACE가 참조 행(업체 면허 등)을 조용히 지운다.
+
+### 경비 오저장 정정 (2026-11-20)
+
+예전 수집기는 SRM `overHeadCostAmount`(=경비)를 `net_construction_cost`(순공사원가)에 저장했다. 지금 수집기는 이 값을 `overhead_cost_amount`에 쓰고 `net_construction_cost`는 쓰지 않으므로, `net_construction_cost IS NOT NULL`인 행이 정정 대상이다.
+
+```bash
+python -m backend.db.fix_overhead_cost            # 미리보기: 대상·바뀔 값·공고문 원문 근거 (DB 변경 없음)
+python -m backend.db.fix_overhead_cost --apply    # 백업(bidmate.sqlite3.bak-시각) 후 한 트랜잭션으로 반영
+```
+
+반영 내용: `overhead_cost_amount`가 비어 있으면 저장값을 옮기고, `net_construction_cost`는 NULL(미확인)로 바꾼다. 여러 번 실행해도 결과가 같다.
 
 ## 7. 아직 정하지 않은 것
 

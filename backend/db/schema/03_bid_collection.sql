@@ -30,7 +30,8 @@ CREATE TABLE IF NOT EXISTS bid_notice (
     approximate_amount            INTEGER,              -- 사정액(=사정금액, API approximateAmount): 시공경험 평가
     presumed_amount               INTEGER,              -- 추정금액
     a_amount                      INTEGER,              -- A금액 (SRM totalAAmt)
-    net_construction_cost         INTEGER,              -- 순공사원가 (SRM overHeadCostAmount)
+    net_construction_cost         INTEGER,              -- 순공사원가(재료비+노무비+경비). SRM에 값 없음 → NULL=미확인 (공고문 금액표 추출 방식은 팀 결정)
+    overhead_cost_amount          INTEGER,              -- 경비 (SRM overHeadCostAmount = 공고문 금액표 '경비' 행)
     notice_doc_found              INTEGER CHECK (notice_doc_found IN (0, 1)),    -- 공고문 확보 (NULL=미확인)
     criteria_doc_found            INTEGER CHECK (criteria_doc_found IN (0, 1)),  -- 적격심사기준 확보
     api_raw                       TEXT NOT NULL,        -- Open API 응답 원본(JSON)

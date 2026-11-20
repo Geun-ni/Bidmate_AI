@@ -36,6 +36,9 @@ COLUMN_MIGRATIONS = [
     ("bid_notice", "needs_recollect", "INTEGER NOT NULL DEFAULT 0 CHECK (needs_recollect IN (0, 1))"),
     ("bid_notice", "recollect_reason", "TEXT"),
     ("bid_notice", "last_collected_at", "TEXT"),
+    # SRM overHeadCostAmount 는 경비. 예전 수집기는 net_construction_cost(순공사원가)에 잘못 저장했음
+    # → 기존 행 정정은 backend/db/fix_overhead_cost.py (검증 후 --apply)
+    ("bid_notice", "overhead_cost_amount", "INTEGER"),
 ]
 
 

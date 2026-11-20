@@ -8,7 +8,7 @@ DB 테이블 정의·초기화는 [`backend/db/README.md`](../db/README.md) 참�
 | 단계 | 하는 일 | 출처 | 저장 테이블 |
 |---|---|---|---|
 | 1. 공고 목록 | 최근 N일 공고 조회, 정정 차수 중복은 최신 등록 행만 | 한전 Open API `electContract.do` | `bid_notice` |
-| 2. 자동심사 조건 | 투찰제한 자동/수동 설정, 면허자격명·적격자격명·지역·주력분야 + A금액·순공사원가·개찰일시 | SRM `findBidBasicInfo`, `find{License,Qualified,Region,LicenseMain}CodeData` | `bid_restriction_snapshot`, `bid_restriction_category`, `bid_restriction_item`, `bid_notice` |
+| 2. 자동심사 조건 | 투찰제한 자동/수동 설정, 면허자격명·적격자격명·지역·주력분야 + A금액·경비·개찰일시 | SRM `findBidBasicInfo`, `find{License,Qualified,Region,LicenseMain}CodeData` | `bid_restriction_snapshot`, `bid_restriction_category`, `bid_restriction_item`, `bid_notice` |
 | 3. 서류 확보 | 공고문·적격심사기준 다운로드 (API 첨부 → 없으면 SRM 전체 첨부) | Open API `filenlink`, SRM `getAttachments`/`downloadAttachment.do` | `bid_attachment` (`source`=OPEN_API/SRM_FALLBACK) |
 | 4. 원문 읽기 | HWP/HWPX/PDF 본문 텍스트 + 한글 수식 스크립트 | 다운로드 파일 | `bid_document_content` |
 
@@ -42,4 +42,7 @@ python -m backend.collector.collect --notice E012607925       # 특정 공고 (�
 - 진행 중 판단: Open API `progressState`는 마감 후에도 `AttendProgress`로 남는 경우가 많으므로(30일 공사용역 1,092건 중 904건이 신청 마감 경과). `progressState` + 입찰참가신청 마감 일시를 같이 확인함 (`--include-closed`로 해제).
 - SRM 요청 간격 기본 3초(`--interval`). 연속 조회 시 타임아웃·연결 끊김·HTTP 404로 차단된 적이 있어, 이런 응답이 오면 `SrmBlocked`로 그 실행을 멈추고 `collect_run.stopped_reason`에 기록
 - 조회 실패 ≠ 제한 없음: `bid_restriction_category.fetch_status='SUCCESS'`이고 `item_count=0`일 때만 해당 제한이 없다는 뜻임
+- 문서 확인: 받은 내용이 HTML 오류 페이지·빈 응답이거나 확장자(hwp/hwpx/pdf)와 파일 형식이 다르면 파일을 남기지 않고 `download_status='FAILED'`(`error`에 이유)로 기록하고 SRM 첨부에서 다시 찾는다(E012606980: API 링크가 HTML 1,064 bytes를 줌)
+- 문서 종류: 파일명에 `적격심사` → 적격심사기준, `공고문` → 공고문. 단 `안내`·`담당자`가 들어간 이름은 공고문으로 보지 않는다(`공고 문의 담당자 안내.hwp`는 공백을 지우면 `공고문의…`가 됨, E012607149)
+- 금액: SRM `overHeadCostAmount`는 공고문 금액표의 **경비**라 `overhead_cost_amount`에 저장한다. SRM에는 순공사원가 값이 없어 `net_construction_cost`는 채우지 않는다(NULL=미확인)
 - 개인정보 미저장: SRM 응답의 담당자 이름·사번·연락처(`creator*`, `updater*`, `representative*` 등)는 저장 전에 제거

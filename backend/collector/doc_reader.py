@@ -105,6 +105,23 @@ def detect_ext(filename, data):
     return ext
 
 
+SIGNATURES = {"hwp": bytes.fromhex("d0cf11e0a1b11ae1"), "hwpx": b"PK", "pdf": b"%PDF-"}
+
+
+def document_problem(filename, data):
+    """받은 내용이 문서 파일이 아니면 이유를, 문서면 None.
+    Open API 링크가 파일 대신 HTML 오류 페이지를 200으로 돌려주는 경우가 있다 (E012606980)."""
+    if not data:
+        return "빈 응답 (0 bytes)"
+    head = data[:1024].lstrip(b"\xef\xbb\xbf \t\r\n").lower()
+    if head.startswith((b"<!doctype html", b"<html")) or (head.startswith(b"<") and b"<html" in head):
+        return f"파일 대신 HTML 응답 ({len(data)} bytes)"
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in (filename or "") else ""
+    if ext in SIGNATURES and not any(data.startswith(sig) for sig in SIGNATURES.values()):
+        return f"확장자 {ext}인데 문서 형식이 아님 (앞부분 {data[:8].hex()}, {len(data)} bytes)"
+    return None
+
+
 def read_document(filename, data):
     """→ (paragraphs, equations). 지원하지 않는 형식이면 ValueError."""
     ext = detect_ext(filename, data)

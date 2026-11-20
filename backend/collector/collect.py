@@ -22,7 +22,7 @@ from datetime import datetime
 from pathlib import Path
 
 from backend.collector import clients
-from backend.collector.doc_reader import detect_ext, read_document
+from backend.collector.doc_reader import document_problem, detect_ext, read_document
 from backend.db.init_db import DEFAULT_DB_PATH, init_db
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -52,11 +52,15 @@ def sanitize(value):
     return value
 
 
+# '공고 문의 담당자 안내'는 공백을 지우면 '공고문의…'가 되어 공고문으로 잘못 분류됐다 (E012607149 등)
+NOT_NOTICE = ("안내", "담당자")
+
+
 def doc_kind(filename):
     name = re.sub(r"\s+", "", filename or "")
     if "적격심사" in name:
         return "CRITERIA"
-    if "공고문" in name:
+    if "공고문" in name and not any(word in name for word in NOT_NOTICE):
         return "NOTICE"
     return None
 
@@ -150,8 +154,14 @@ def attachment_version(db, notice_no):
 
 
 def save_attachment(db, notice_no, kind, filename, source, data=None, error=None):
+    """첨부 1건 기록. 받은 내용이 문서가 아니면(HTML 오류 페이지 등) 파일을 남기지 않고 FAILED 로 기록한다.
+    → 문서를 확보했으면 True (False 면 호출자가 SRM 보완을 시도)."""
     folder = ROOT / "downloads" / notice_no
     path, sha, size, ext = None, None, None, None
+    if data is not None:
+        problem = document_problem(filename, data)
+        if problem:
+            data, error = None, problem
     if data is not None:
         folder.mkdir(parents=True, exist_ok=True)
         safe = re.sub(r'[\\/:*?"<>|]', "_", filename)
@@ -256,10 +266,12 @@ def collect_srm(db, srm, notice_no, found_kinds):
                           sub_area_code, sub_area_name) VALUES (?,?,?,?,?,?,?)""",
                        (notice_no, cat, *parse_restriction_item(cat, it)))
 
-    # A금액·순공사원가·개찰일시·정정 차수 (SRM 상세에만 있는 값, 없으면 기존 값 유지)
+    # A금액·경비·개찰일시·정정 차수 (SRM 상세에만 있는 값, 없으면 기존 값 유지)
+    # overHeadCostAmount 는 공고문 금액표의 '경비'다(순공사원가 아님). 순공사원가는 SRM에 없어
+    # net_construction_cost 는 쓰지 않는다(NULL=미확인).
     revision = basic.get("bidRevision", basic.get("revision"))
     db.execute("""UPDATE bid_notice SET a_amount=COALESCE(?, a_amount),
-                  net_construction_cost=COALESCE(?, net_construction_cost),
+                  overhead_cost_amount=COALESCE(?, overhead_cost_amount),
                   open_bid_at=COALESCE(?, open_bid_at), srm_revision=COALESCE(?, srm_revision)
                   WHERE notice_no=?""",
                (to_int(basic.get("totalAAmt")), to_int(basic.get("overHeadCostAmount")),
