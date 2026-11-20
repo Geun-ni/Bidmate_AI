@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>입찰메이트</title>
+  <title>입찰메이트 · 한전 입찰 공고</title>
   <link rel="stylesheet" href="/styles.css">
   <script src="/app.js" defer></script>
 </head>
@@ -11,21 +11,22 @@
   <header class="topbar">
     <div class="wrap topbar-inner">
       <span class="brand">입찰메이트</span>
-      <span class="demo-label">가상 데이터 데모</span>
+      <span class="demo-label">한전 공식 API·SRM 수집 데이터</span>
     </div>
   </header>
 
   <main class="wrap">
-    <h1>맞춤 입찰 공고</h1>
+    <h1>한전 입찰 공고</h1>
+    <p class="lead">한전 공사·용역 중 적격심사 공고입니다. 업체 조건과 맞춰 본 결과가 아닙니다.</p>
+    <div class="toolbar">
+      <label class="toggle"><input id="include-closed" type="checkbox"> 마감된 공고 포함</label>
+      <span id="last-run" class="meta"></span>
+    </div>
     <p id="status" role="status">공고를 불러오는 중입니다.</p>
-    <section id="company" class="panel company" aria-labelledby="company-title" hidden>
-      <h2 id="company-title"></h2>
-      <dl id="company-criteria" class="criteria"></dl>
-    </section>
 
     <div id="workspace" class="workspace" hidden>
       <section class="panel notice-list" aria-labelledby="list-title">
-        <h2 id="list-title">추천 공고 <span id="notice-count" class="count"></span></h2>
+        <h2 id="list-title">공고 목록 <span id="notice-count" class="count"></span></h2>
         <ul id="notices"></ul>
       </section>
 
@@ -34,20 +35,21 @@
           <p id="notice-meta" class="meta"></p>
           <h2 id="notice-title"></h2>
         </header>
-        <section class="detail-section" aria-labelledby="reason-title">
-          <h3 id="reason-title">추천 사유</h3>
-          <ul id="reasons" class="reasons"></ul>
+        <section class="detail-section" aria-labelledby="basic-title">
+          <h3 id="basic-title">기본 정보 <span class="source">공식 API</span></h3>
+          <dl id="basic" class="summary"></dl>
         </section>
-        <section class="detail-section" aria-labelledby="summary-title">
-          <h3 id="summary-title">공고 요약</h3>
-          <dl id="summary" class="summary"></dl>
+        <section class="detail-section" aria-labelledby="license-title">
+          <h3 id="license-title">면허 조건 <span class="source">SRM 투찰제한</span></h3>
+          <div id="license" class="conditions"></div>
         </section>
-        <section class="detail-section" aria-labelledby="documents-title">
-          <div class="section-heading">
-            <h3 id="documents-title">제출서류 체크리스트</h3>
-            <span id="progress" class="count" aria-live="polite"></span>
-          </div>
-          <ul id="documents" class="documents"></ul>
+        <section class="detail-section" aria-labelledby="qualification-title">
+          <h3 id="qualification-title">적격자격 조건 <span class="source">SRM 투찰제한</span></h3>
+          <div id="qualification" class="conditions"></div>
+        </section>
+        <section class="detail-section" aria-labelledby="srm-title">
+          <h3 id="srm-title">SRM 상세 <span id="detail-status" class="tag"></span></h3>
+          <dl id="srm" class="summary"></dl>
         </section>
       </article>
     </div>

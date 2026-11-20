@@ -13,12 +13,29 @@ backend/db/schema/ 의 SQL 파일을 파일명 순서(01 → 07)대로 적용한
     python -m backend.db.init_db --db 경로.sqlite3
 """
 import argparse
+import os
 import sqlite3
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 SCHEMA_DIR = Path(__file__).with_name("schema")
-DEFAULT_DB_PATH = ROOT / "bidmate.sqlite3"
+
+
+def resolve_db_path():
+    """수집기·웹 서버·예약 실행이 같은 DB 파일을 쓰도록 경로를 한 곳에서 정한다.
+    우선순위: 환경 변수 BIDMATE_DB → 루트 .env 의 BIDMATE_DB= → 저장소 루트 bidmate.sqlite3.
+    상대 경로는 실행 위치(cwd)가 아니라 저장소 루트 기준으로 해석한다."""
+    value = os.environ.get("BIDMATE_DB")
+    env = ROOT / ".env"
+    if not value and env.exists():
+        for line in env.read_text(encoding="utf-8").splitlines():
+            if line.startswith("BIDMATE_DB="):
+                value = line.split("=", 1)[1].strip()
+    path = Path(value) if value else Path("bidmate.sqlite3")
+    return path if path.is_absolute() else ROOT / path
+
+
+DEFAULT_DB_PATH = resolve_db_path()
 
 
 def schema_files():
@@ -39,6 +56,16 @@ COLUMN_MIGRATIONS = [
     # SRM overHeadCostAmount 는 경비. 예전 수집기는 net_construction_cost(순공사원가)에 잘못 저장했음
     # → 기존 행 정정은 backend/db/fix_overhead_cost.py (검증 후 --apply)
     ("bid_notice", "overhead_cost_amount", "INTEGER"),
+    ("collect_run", "new_notice_count", "INTEGER"),
+    ("collect_run", "completed_count", "INTEGER"),
+    ("collect_run", "deferred_count", "INTEGER"),
+    ("collect_run", "failed_count", "INTEGER"),
+    ("collect_run", "mode", "TEXT"),
+    ("collect_run", "window_begin", "TEXT"),
+    ("collect_run", "window_end", "TEXT"),
+    ("collect_run", "list_synced", "INTEGER"),
+    ("collect_run", "updated_count", "INTEGER"),
+    ("collect_run", "corrected_count", "INTEGER"),
 ]
 
 
