@@ -355,9 +355,43 @@ def srm_value_check(item, blocks, srm):
             "document_location": hit}
 
 
-def analyze(docs):
+def load_collected_documents(db_path):
+    from contextlib import closing
+
+    from backend.notices_api import SCOPE, connect
+
+    with closing(connect(db_path)) as db:
+        notices = {
+            row["notice_no"]: {"srm": dict(row), "files": {}}
+            for row in db.execute(f"SELECT notice_no, item_type, a_amount, overhead_cost_amount FROM bid_notice WHERE {SCOPE}")
+        }
+        for row in db.execute('''
+            SELECT a.*, c.read_status, c.text, c.equation_count
+            FROM bid_attachment a
+            LEFT JOIN bid_document_content c ON c.attachment_id = a.id
+            ORDER BY a.fetched_at DESC, a.id DESC
+        '''):
+            entry = notices.get(row["notice_no"])
+            if entry is None:
+                continue
+            if row["download_status"] != "SUCCESS":
+                status = "DOWNLOAD_FAILED"
+            elif row["read_status"] == "SUCCESS":
+                status = "OK"
+            else:
+                status = "READ_FAILED"
+            entry["files"].setdefault(row["doc_kind"], []).append({
+                "filename": row["filename"], "source": row["source"], "status": status,
+                "format": row["file_ext"], "equation_count": row["equation_count"],
+                "error": row["error"], "path": row["local_path"],
+                "paragraphs": (row["text"] or "").splitlines(),
+            })
+    return notices
+
+
+def analyze(docs, expected=EXPECTED):
     out = {}
-    for no, exp in EXPECTED.items():
+    for no, exp in expected.items():
         entry = docs.get(no, {})
         res = {"type": exp["type"], "srm": entry.get("srm", {}), "docs": {}}
         for kind in ("NOTICE", "CRITERIA"):
@@ -380,11 +414,16 @@ def analyze(docs):
                 state = "확보·읽기 성공" if ok else "미확보(공고문 오분류)"
                 doc["state"] = state
             target = ok[0] if ok else None
-            blocks = read_blocks(target["path"]) if target else None
+            blocks = None
+            if target and target["path"]:
+                try:
+                    blocks = read_blocks(target["path"])
+                except (OSError, ValueError):
+                    pass
             flat = target.get("paragraphs") if target else None
             if target and blocks is None:  # PDF: 표 구조 없이 문단만
                 blocks = [("p", line) for line in flat]
-                doc["note"] = "PDF라 표 구조 복원 불가, 문단 텍스트로만 찾음"
+                doc["note"] = "Using stored paragraph text without table structure."
             for item in ITEMS[kind]:
                 if not target:
                     found = {"status": "파일 미확보나 읽기 실패로 확인 불가"}
@@ -401,11 +440,18 @@ def analyze(docs):
 
 def main():
     ap = argparse.ArgumentParser(description="대표 공고 항목 위치·원문 발췌")
-    ap.add_argument("--docs", required=True, help="verify_reference_documents.py 결과 JSON")
+    source = ap.add_mutually_exclusive_group(required=True)
+    source.add_argument("--db", help="Collected SQLite database")
+    source.add_argument("--docs", help="verify_reference_documents.py 결과 JSON")
     ap.add_argument("--out", required=True)
     args = ap.parse_args()
-    docs = json.loads(Path(args.docs).read_text(encoding="utf-8"))
-    result = analyze(docs)
+    if args.db:
+        docs = load_collected_documents(args.db)
+        expected = {no: {"type": entry["srm"]["item_type"]} for no, entry in docs.items()}
+        result = analyze(docs, expected)
+    else:
+        docs = json.loads(Path(args.docs).read_text(encoding="utf-8"))
+        result = analyze(docs)
     Path(args.out).write_text(json.dumps(result, ensure_ascii=False, indent=1), encoding="utf-8")
     tally = {}
     for r in result.values():
