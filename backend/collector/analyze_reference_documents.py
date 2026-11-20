@@ -423,7 +423,7 @@ def analyze(docs, expected=EXPECTED):
             flat = target.get("paragraphs") if target else None
             if target and blocks is None:  # PDF: 표 구조 없이 문단만
                 blocks = [("p", line) for line in flat]
-                doc["note"] = "Using stored paragraph text without table structure."
+                doc["note"] = "표 구조 없이 저장된 문단 텍스트로만 찾음 (PDF이거나 원본 파일을 읽을 수 없음)"
             for item in ITEMS[kind]:
                 if not target:
                     found = {"status": "파일 미확보나 읽기 실패로 확인 불가"}
@@ -441,7 +441,7 @@ def analyze(docs, expected=EXPECTED):
 def main():
     ap = argparse.ArgumentParser(description="대표 공고 항목 위치·원문 발췌")
     source = ap.add_mutually_exclusive_group(required=True)
-    source.add_argument("--db", help="Collected SQLite database")
+    source.add_argument("--db", help="수집기 SQLite DB (bidmate.sqlite3)")
     source.add_argument("--docs", help="verify_reference_documents.py 결과 JSON")
     ap.add_argument("--out", required=True)
     args = ap.parse_args()
