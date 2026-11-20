@@ -43,7 +43,7 @@ python -m backend.collector.collect --limit 5         # ④ 공고 수집
 
 ## 3. 테이블별 쓰는 모듈 / 데이터 출처 / 읽는 모듈 (코드 확인 결과, 2026-11-19)
 
-저장소 전체를 확인한 결과 **DB를 실제로 쓰는 코드는 `seed_reference.py`와 `backend/collector/collect.py` 두 개뿐**이다. `ai/summary.py`, `backend/server.py`(`/api/demo`만 있음, `data/sample/demo.json` 사용), `backend/matching.py`, `frontend/app.js`에는 SQL·DB 접근이 없다. 아래에서 **예정** = 아직 코드 없음, **팀 결정 필요** = 저장 주체를 정하지 않음.
+저장소 전체를 확인한 결과 **DB를 실제로 쓰는 코드는 `seed_reference.py`와 `backend/collector/collect.py` 두 개뿐**이다. (2026-11-20 추가: `backend/notices_api.py`가 웹 API `/api/notices`용으로 `bid_notice`, `bid_restriction_*`, `collect_run`을 **읽기 전용**으로 읽는다.) `ai/summary.py`, `backend/server.py`(`/api/demo`만 있음, `data/sample/demo.json` 사용), `backend/matching.py`, `frontend/app.js`에는 SQL·DB 접근이 없다. 아래에서 **예정** = 아직 코드 없음, **팀 결정 필요** = 저장 주체를 정하지 않음.
 
 | 테이블 | 직접 쓰는 모듈 | 데이터 출처 | 읽는 모듈 |
 |---|---|---|---|

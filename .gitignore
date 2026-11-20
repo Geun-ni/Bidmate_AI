@@ -25,3 +25,6 @@ Desktop.ini
 .vscode/
 # 수집기 다운로드 첨부파일
 downloads/
+
+# 예약 수집 로그
+logs/

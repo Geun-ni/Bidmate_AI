@@ -123,5 +123,16 @@ CREATE TABLE IF NOT EXISTS collect_run (
     api_notice_count INTEGER,
     target_count     INTEGER,
     processed_count  INTEGER,
-    stopped_reason   TEXT
+    stopped_reason   TEXT,
+    -- 실행 결과 건수 (init_db.py 마이그레이션이 기존 DB에도 추가)
+    new_notice_count INTEGER,             -- 이번 실행에서 bid_notice 에 처음 저장된 공고 (알림 연결 지점)
+    completed_count  INTEGER,             -- 상세 수집(투찰제한·문서)을 끝낸 공고
+    deferred_count   INTEGER,             -- 미처리: 한도·SRM 차단·중단으로 이번에 못 한 상세 수집 (다음 실행에서 이어서)
+    failed_count     INTEGER,             -- 처리했지만 실패·부분 수집으로 끝난 공고 (다음 실행에서 재시도)
+    mode             TEXT,                -- full(최초 적재) / daily(증분)
+    window_begin     TEXT,                -- 공식 API 조회 공고일 범위 (YYYYMMDD)
+    window_end       TEXT,
+    list_synced      INTEGER,             -- 1 = 조회 범위 전체를 정상 반영 → 다음 daily 의 기준 시점
+    updated_count    INTEGER,             -- 기본정보만 바뀐 공고 (상세 재사용)
+    corrected_count  INTEGER              -- 정정·첨부 변경 → 상세 재수집 표시
 );
