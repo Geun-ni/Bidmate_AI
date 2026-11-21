@@ -15,6 +15,10 @@ dist/
 # 데이터베이스
 *.sqlite3
 *.sqlite3-*
+*.sqlite3.bak-*
+
+# 공유·추출용 CSV
+*.csv
 
 # 운영체제(OS) 부산물
 .DS_Store
@@ -25,3 +29,6 @@ Desktop.ini
 .vscode/
 # 수집기 다운로드 첨부파일
 downloads/
+
+# 예약 수집 로그
+logs/

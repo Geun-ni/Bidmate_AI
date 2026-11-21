@@ -30,7 +30,8 @@ CREATE TABLE IF NOT EXISTS bid_notice (
     approximate_amount            INTEGER,              -- 사정액(=사정금액, API approximateAmount): 시공경험 평가
     presumed_amount               INTEGER,              -- 추정금액
     a_amount                      INTEGER,              -- A금액 (SRM totalAAmt)
-    net_construction_cost         INTEGER,              -- 순공사원가 (SRM overHeadCostAmount)
+    net_construction_cost         INTEGER,              -- 순공사원가(재료비+노무비+경비). SRM에 값 없음 → NULL=미확인 (공고문 금액표 추출 방식은 팀 결정)
+    overhead_cost_amount          INTEGER,              -- 경비 (SRM overHeadCostAmount = 공고문 금액표 '경비' 행)
     notice_doc_found              INTEGER CHECK (notice_doc_found IN (0, 1)),    -- 공고문 확보 (NULL=미확인)
     criteria_doc_found            INTEGER CHECK (criteria_doc_found IN (0, 1)),  -- 적격심사기준 확보
     api_raw                       TEXT NOT NULL,        -- Open API 응답 원본(JSON)
@@ -103,16 +104,18 @@ CREATE TABLE IF NOT EXISTS bid_attachment (
     UNIQUE (notice_no, filename)
 );
 
--- 첨부 원문 (본문 텍스트 + 한글 수식 스크립트). 해석 없이 읽기만 함 → AI 문서 분석의 입력
+-- 첨부 원문 (전처리한 본문 + 한글 수식 스크립트). 해석 없이 읽기만 함 → AI 문서 분석의 입력
+-- 본문 형식은 backend/collector/doc_reader.py 맨 위 설명 (표는 '칸1 | 칸2' 행, 수식·그림은 나온 자리에 표시)
 CREATE TABLE IF NOT EXISTS bid_document_content (
     attachment_id    INTEGER PRIMARY KEY REFERENCES bid_attachment(id) ON DELETE CASCADE,
     read_status      TEXT NOT NULL CHECK (read_status IN ('SUCCESS', 'FAILED')),
     text             TEXT,
-    equations        TEXT,                              -- JSON [{"script": "...", "context": [...]}]
-    paragraph_count  INTEGER,
+    equations        TEXT,                              -- JSON [{"script", "line"(본문 줄 번호), "context"}]
+    paragraph_count  INTEGER,                           -- 본문 줄 수
     equation_count   INTEGER,
     error            TEXT,
-    read_at          TEXT NOT NULL
+    read_at          TEXT NOT NULL,
+    parser_version   TEXT                               -- doc_reader.PARSER_VERSION (NULL = 전처리 전 v1)
 );
 
 CREATE TABLE IF NOT EXISTS collect_run (
@@ -122,5 +125,16 @@ CREATE TABLE IF NOT EXISTS collect_run (
     api_notice_count INTEGER,
     target_count     INTEGER,
     processed_count  INTEGER,
-    stopped_reason   TEXT
+    stopped_reason   TEXT,
+    -- 실행 결과 건수 (init_db.py 마이그레이션이 기존 DB에도 추가)
+    new_notice_count INTEGER,             -- 이번 실행에서 bid_notice 에 처음 저장된 공고 (알림 연결 지점)
+    completed_count  INTEGER,             -- 상세 수집(투찰제한·문서)을 끝낸 공고
+    deferred_count   INTEGER,             -- 미처리: 한도·SRM 차단·중단으로 이번에 못 한 상세 수집 (다음 실행에서 이어서)
+    failed_count     INTEGER,             -- 처리했지만 실패·부분 수집으로 끝난 공고 (다음 실행에서 재시도)
+    mode             TEXT,                -- full(최초 적재) / daily(증분)
+    window_begin     TEXT,                -- 공식 API 조회 공고일 범위 (YYYYMMDD)
+    window_end       TEXT,
+    list_synced      INTEGER,             -- 1 = 조회 범위 전체를 정상 반영 → 다음 daily 의 기준 시점
+    updated_count    INTEGER,             -- 기본정보만 바뀐 공고 (상세 재사용)
+    corrected_count  INTEGER              -- 정정·첨부 변경 → 상세 재수집 표시
 );

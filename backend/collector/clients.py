@@ -34,16 +34,44 @@ def load_api_key(root):
     raise RuntimeError("프로젝트 루트 .env 에 SRM_API_KEY=... 가 필요합니다.")
 
 
-def fetch_open_api_notices(api_key, days=7, company_id="COM01"):
-    """최근 days일(최대 90) 공고를 Open API에서 받는다."""
-    end = date.today()
-    start = end - timedelta(days=min(days, 90))
-    res = requests.get(OPEN_API_URL, timeout=90, params={
-        "companyId": company_id, "noticeBeginDate": start.strftime("%Y%m%d"),
+MAX_WINDOW_DAYS = 90  # 공식 API: noticeBeginDate~noticeEndDate 최대 90일 (과거 구간도 조회 가능)
+
+
+def date_windows(begin, end, size=MAX_WINDOW_DAYS):
+    """[begin, end] 를 최대 90일 폭의 구간으로 나눈다 (양 끝 포함)."""
+    windows, cur = [], begin
+    while cur <= end:
+        stop = min(cur + timedelta(days=size - 1), end)
+        windows.append((cur, stop))
+        cur = stop + timedelta(days=1)
+    return windows
+
+
+def fetch_open_api_window(api_key, begin, end, company_id="COM01"):
+    """공고일(noticeDate) begin~end 공고. 공식 API는 수정시각 조회 인자가 없고 공고일 범위로만 조회된다.
+    해당 기간 공고가 없으면 HTTP 404 + errCd 404 'NotFound'가 오므로 빈 목록으로 본다."""
+    res = requests.get(OPEN_API_URL, timeout=120, params={
+        "companyId": company_id, "noticeBeginDate": begin.strftime("%Y%m%d"),
         "noticeEndDate": end.strftime("%Y%m%d"), "apiKey": api_key, "returnType": "json"})
-    res.raise_for_status()
-    body = res.json()
+    try:
+        body = res.json()
+    except ValueError:
+        body = None
+    if res.status_code == 404 and isinstance(body, dict) and str(body.get("errCd")) == "404":
+        return []
+    if res.status_code != 200:
+        msg = body.get("errMsg") if isinstance(body, dict) else ""
+        raise RuntimeError(f"Open API HTTP {res.status_code} {msg}")
     return body.get("data", []) if isinstance(body, dict) else []
+
+
+def fetch_open_api_notices(api_key, days=7, company_id="COM01"):
+    """최근 days일 공고 (90일 넘으면 나눠 조회)."""
+    end = date.today()
+    rows = []
+    for b, e in date_windows(end - timedelta(days=days), end):
+        rows += fetch_open_api_window(api_key, b, e, company_id)
+    return rows
 
 
 class SrmBlocked(RuntimeError):

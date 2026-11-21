@@ -14,16 +14,5 @@ CREATE TABLE IF NOT EXISTS notice_analysis_cache (
     invalidated_at    TEXT
 );
 
--- 문서 추출값 (field 예: eligibility, eligibility_docs, office_target, industry_avg_debt_ratio ...)
-CREATE TABLE IF NOT EXISTS document_extraction (
-    id                   INTEGER PRIMARY KEY,
-    notice_no            TEXT NOT NULL REFERENCES bid_notice(notice_no) ON DELETE CASCADE,
-    attachment_id        INTEGER REFERENCES bid_attachment(id) ON DELETE SET NULL,
-    field                TEXT NOT NULL,
-    value                TEXT,                          -- 단일 값 또는 JSON
-    source_location      TEXT,                          -- 근거 문장/조항
-    verification_status  TEXT NOT NULL DEFAULT 'UNVERIFIED'
-                             CHECK (verification_status IN ('UNVERIFIED', 'VERIFIED', 'REVIEW')),
-    extracted_at         TEXT NOT NULL
-);
-CREATE INDEX IF NOT EXISTS document_extraction_notice_idx ON document_extraction (notice_no, field);
+-- 문서 추출값 표(document_extraction)는 2026-11-21 뺐다. 결과를 담는 표(evaluation_rule, required_document_item)가
+-- 각자 근거 문서(첨부 id)·위치·문구를 갖고, 문서명은 bid_attachment 와 join 해서 얻는다.

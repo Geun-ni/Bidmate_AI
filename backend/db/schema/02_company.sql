@@ -41,14 +41,29 @@ CREATE TABLE IF NOT EXISTS company_restricted_qualification (
     UNIQUE (company_id, qualification_code)
 );
 
--- 알림 수신 설정 (FUNC-026, 채널·발송 정책 확정 전까지 저장 구조만)
-CREATE TABLE IF NOT EXISTS company_notification_setting (
-    company_id         TEXT PRIMARY KEY REFERENCES company(company_id) ON DELETE CASCADE,
-    email              TEXT,
-    telegram_chat_id   TEXT,
+-- 로그인 사용자. 알림 수신 설정도 사용자 단위로 여기에 둔다 (옛 company_notification_setting)
+CREATE TABLE IF NOT EXISTS app_user (
+    user_id            TEXT PRIMARY KEY,                 -- UUID
+    email              TEXT NOT NULL UNIQUE,
+    password_hash      TEXT,                             -- 원문 저장 금지. 외부 로그인이면 NULL
+    display_name       TEXT,
     email_enabled      INTEGER NOT NULL DEFAULT 0 CHECK (email_enabled IN (0, 1)),
+    telegram_chat_id   TEXT,
     telegram_enabled   INTEGER NOT NULL DEFAULT 0 CHECK (telegram_enabled IN (0, 1)),
     include_review     INTEGER NOT NULL DEFAULT 1 CHECK (include_review IN (0, 1)),  -- REVIEW 공고도 알릴지
     consent_at         TEXT,                             -- 수신 동의 일시 (NULL이면 발송 금지)
+    created_at         TEXT NOT NULL,
     updated_at         TEXT NOT NULL
 );
+
+-- 업체 소속 (한 업체에 여러 사용자). 업체 데이터 API는 membership_status='ACTIVE' 인 소속만 조회·수정 허용
+-- 업체명·사업자번호가 같다고 자동 연결하지 않는다 (업체정보 정의서 §9)
+CREATE TABLE IF NOT EXISTS company_user (
+    company_id         TEXT NOT NULL REFERENCES company(company_id) ON DELETE CASCADE,
+    user_id            TEXT NOT NULL REFERENCES app_user(user_id) ON DELETE CASCADE,
+    role               TEXT NOT NULL DEFAULT 'MEMBER' CHECK (role IN ('OWNER', 'MEMBER')),
+    membership_status  TEXT NOT NULL DEFAULT 'PENDING' CHECK (membership_status IN ('PENDING', 'ACTIVE', 'REJECTED')),
+    created_at         TEXT NOT NULL,
+    PRIMARY KEY (company_id, user_id)
+);
+CREATE INDEX IF NOT EXISTS company_user_user_idx ON company_user (user_id);
