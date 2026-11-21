@@ -27,14 +27,7 @@ CREATE TABLE IF NOT EXISTS restricted_qualification_equivalence (
     PRIMARY KEY (held_qualification_code, accepted_requirement_code)
 );
 
--- 면허 상하위 인정 (예: 감리업(전력종합감리) 보유 → 감리업(전력전문감리) 요구 충족). 시드 데이터는 예정
-CREATE TABLE IF NOT EXISTS license_equivalence (
-    held_license_code      TEXT NOT NULL REFERENCES license_master(license_code),
-    accepted_license_code  TEXT NOT NULL REFERENCES license_master(license_code),
-    is_active              INTEGER NOT NULL DEFAULT 1 CHECK (is_active IN (0, 1)),
-    source_note            TEXT,
-    PRIMARY KEY (held_license_code, accepted_license_code)
-);
+-- 면허 상하위 인정(license_equivalence)은 2026-11-21 범위 축소로 뺐다: 면허는 정확히 같은 코드만 인정, 나머지는 REVIEW
 
 -- SRM 지역그룹 (areaLimit). U(전남)·W(광주)는 과거 공고 판독용, 업체 선택 불가(is_active=0)
 CREATE TABLE IF NOT EXISTS srm_region_group_master (

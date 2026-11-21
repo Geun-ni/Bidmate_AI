@@ -104,16 +104,18 @@ CREATE TABLE IF NOT EXISTS bid_attachment (
     UNIQUE (notice_no, filename)
 );
 
--- 첨부 원문 (본문 텍스트 + 한글 수식 스크립트). 해석 없이 읽기만 함 → AI 문서 분석의 입력
+-- 첨부 원문 (전처리한 본문 + 한글 수식 스크립트). 해석 없이 읽기만 함 → AI 문서 분석의 입력
+-- 본문 형식은 backend/collector/doc_reader.py 맨 위 설명 (표는 '칸1 | 칸2' 행, 수식·그림은 나온 자리에 표시)
 CREATE TABLE IF NOT EXISTS bid_document_content (
     attachment_id    INTEGER PRIMARY KEY REFERENCES bid_attachment(id) ON DELETE CASCADE,
     read_status      TEXT NOT NULL CHECK (read_status IN ('SUCCESS', 'FAILED')),
     text             TEXT,
-    equations        TEXT,                              -- JSON [{"script": "...", "context": [...]}]
-    paragraph_count  INTEGER,
+    equations        TEXT,                              -- JSON [{"script", "line"(본문 줄 번호), "context"}]
+    paragraph_count  INTEGER,                           -- 본문 줄 수
     equation_count   INTEGER,
     error            TEXT,
-    read_at          TEXT NOT NULL
+    read_at          TEXT NOT NULL,
+    parser_version   TEXT                               -- doc_reader.PARSER_VERSION (NULL = 전처리 전 v1)
 );
 
 CREATE TABLE IF NOT EXISTS collect_run (

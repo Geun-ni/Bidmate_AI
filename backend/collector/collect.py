@@ -30,7 +30,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from backend.collector import clients
-from backend.collector.doc_reader import document_problem, detect_ext, read_document
+from backend.collector.doc_reader import PARSER_VERSION, document_problem, detect_ext, read_document
 from backend.db.init_db import DEFAULT_DB_PATH, init_db
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -244,12 +244,13 @@ def save_content(db, attachment_id, filename, data):
         values = ("FAILED", None, None, None, None, f"{type(exc).__name__}: {exc}"[:500])
     db.execute("""
         INSERT INTO bid_document_content (attachment_id, read_status, text, equations, paragraph_count,
-            equation_count, error, read_at)
-        VALUES (?,?,?,?,?,?,?,?)
+            equation_count, error, read_at, parser_version)
+        VALUES (?,?,?,?,?,?,?,?,?)
         ON CONFLICT(attachment_id) DO UPDATE SET read_status=excluded.read_status, text=excluded.text,
             equations=excluded.equations, paragraph_count=excluded.paragraph_count,
-            equation_count=excluded.equation_count, error=excluded.error, read_at=excluded.read_at
-    """, (attachment_id, *values, now()))
+            equation_count=excluded.equation_count, error=excluded.error, read_at=excluded.read_at,
+            parser_version=excluded.parser_version
+    """, (attachment_id, *values, now(), PARSER_VERSION))
 
 
 # ---------------------------------------------------------------- 수집 단계
@@ -278,8 +279,9 @@ def parse_restriction_item(category, item):
     if category == "QUALIFIED":
         return (item.get("qualifiedQualificationCode"), item.get("qualifiedQualificationCodeName"), None, None, None)
     if category == "LICENSE_MAIN":
-        return (item.get("licenseMainQualificationCode") or item.get("licenseQualificationCode"),
-                item.get("licenseMainQualificationCodeName") or item.get("licenseQualificationCodeName"),
+        # 실제 응답 키는 licenseMainCode/licenseMainCodeName (E012608201 등). 예전 키는 혹시 몰라 대체로 둔다
+        return (item.get("licenseMainCode") or item.get("licenseMainQualificationCode"),
+                item.get("licenseMainCodeName") or item.get("licenseMainQualificationCodeName"),
                 None, None, None)
     return (item.get("licenseQualificationCode"), item.get("licenseQualificationCodeName"), None, None, None)
 

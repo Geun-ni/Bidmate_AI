@@ -10,7 +10,7 @@ DB 테이블 정의·초기화는 [`backend/db/README.md`](../db/README.md) 참�
 | 1. 공고 목록 | 최초 180일 / 매일 마지막 반영 이후 공고일 범위 조회, 정정 차수 중복은 최신 등록 행만 | 한전 Open API `electContract.do` | `bid_notice` |
 | 2. 자동심사 조건 | 투찰제한 자동/수동 설정, 면허자격명·적격자격명·지역·주력분야 + A금액·경비·개찰일시 | SRM `findBidBasicInfo`, `find{License,Qualified,Region,LicenseMain}CodeData` | `bid_restriction_snapshot`, `bid_restriction_category`, `bid_restriction_item`, `bid_notice` |
 | 3. 서류 확보 | 공고문·적격심사기준 다운로드 (API 첨부 → 없으면 SRM 전체 첨부) | Open API `filenlink`, SRM `getAttachments`/`downloadAttachment.do` | `bid_attachment` (`source`=OPEN_API/SRM_FALLBACK) |
-| 4. 원문 읽기 | HWP/HWPX/PDF 본문 텍스트 + 한글 수식 스크립트 | 다운로드 파일 | `bid_document_content` |
+| 4. 원문 읽기 | HWP/HWPX/PDF 전처리 본문(표 행·수식·그림 자리 표시, 분수 합침, HWP 전용 문자 정리) + 수식 스크립트 | 다운로드 파일 | `bid_document_content` (`parser_version`) |
 
 LLM 요약·구조화 추출은 AI 파트에서 `bid_document_content`의 `text`, `equations`를 읽어 처리함
 

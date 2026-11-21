@@ -20,24 +20,47 @@ CREATE TABLE IF NOT EXISTS company_bid_eligibility (
     PRIMARY KEY (company_id, notice_no)
 );
 
--- 적격심사 평가 기준 (분야별 배점표, 입찰가격 산식, 경영상태 평균비율, 해당/인접 사업소 등)
+-- 적격심사 평가 기준: 행 1개 = 공고 1건의 평가 항목 1개 (분야별 배점, 입찰가격 산식, 구간 점수표, 가·감점, 통과점수)
+-- 쓰는 모듈: 정근(배점·산식 추출). 산식이 그림에만 있으면 formula_source='IMAGE' + image_path 로 남기고,
+--   LLM이 그림을 읽어 formula 를 채운 뒤 updated_by='LLM' 으로 고친다 (검증 전까지 verification_status='REVIEW').
+-- parameters JSON 형식 (rule_type 별):
+--   FORMULA   {"vars": {"A": "a_amount", "기준율": 88}}
+--   TABLE     {"rows": [{"min": null, "max": 50, "score": 7}, ...]} 또는 {"rows": [{"grade": "AAA", "score": 15}, ...]}
+--   FIXED     {"score": 1, "condition": "원문 조건 문구"}
+--   THRESHOLD {"pass_score": 95}
+-- 근거 위치(source_location)는 본문 줄 번호가 아니라 '별표1 > 제3조 > 표 2행'처럼 문서 구조로 쓴다
+-- (재파싱하면 줄 번호가 바뀜). 다시 찾을 때는 source_quote 를 본문에서 검색한다.
 CREATE TABLE IF NOT EXISTS evaluation_rule (
-    id              INTEGER PRIMARY KEY,
-    notice_no       TEXT NOT NULL REFERENCES bid_notice(notice_no) ON DELETE CASCADE,
-    category        TEXT NOT NULL CHECK (category IN
-                        ('PRICE', 'PERFORMANCE', 'MANAGEMENT', 'OFFICE', 'BONUS', 'PENALTY', 'PASS_SCORE')),
-    item_name       TEXT NOT NULL,                      -- 예: 입찰가격, 시공경험, 부채비율, 해당사업소
-    max_score       REAL,
-    formula         TEXT,                               -- 수식 스크립트 또는 정규화 산식
-    parameters      TEXT,                               -- JSON (상수·계수·특례 구간·업종 평균비율·사업소 목록 등)
-    rounding_rule   TEXT,
-    source_location TEXT,
-    verified        INTEGER NOT NULL DEFAULT 0 CHECK (verified IN (0, 1)),
-    created_at      TEXT NOT NULL
+    id                  INTEGER PRIMARY KEY,
+    notice_no           TEXT NOT NULL REFERENCES bid_notice(notice_no) ON DELETE CASCADE,
+    parent_id           INTEGER REFERENCES evaluation_rule(id) ON DELETE CASCADE,  -- 상위 항목 (최상위는 NULL)
+    position            INTEGER NOT NULL,                -- 공고 안 표시 순서
+    category            TEXT NOT NULL CHECK (category IN
+                            ('PRICE', 'PERFORMANCE', 'MANAGEMENT', 'OFFICE', 'BONUS', 'PENALTY', 'PASS_SCORE')),
+    item_name           TEXT NOT NULL,                   -- 원문 항목명 그대로 (예: 시공경험, 부채비율)
+    rule_type           TEXT NOT NULL CHECK (rule_type IN ('FORMULA', 'TABLE', 'FIXED', 'THRESHOLD')),
+    max_score           REAL,                            -- 배점(점). 감점은 음수 한도, 통과점수 행은 NULL
+    formula             TEXT,                            -- FORMULA: 산식 (예: 50-2×|(90/100)-(입찰가격/예정가격)|×100)
+    formula_source      TEXT CHECK (formula_source IN ('EQUATION', 'TEXT', 'IMAGE')),  -- 산식이 어디서 왔는지
+    image_path          TEXT,                            -- IMAGE: 꺼낸 그림 파일 (LLM이 읽을 대상)
+    parameters          TEXT,                            -- JSON, 형식은 위 설명
+    input_key           TEXT,                            -- 업체 입력값 이름 (company_evaluation_draft.inputs 의 키)
+    rounding_digits     INTEGER,                         -- 소수점 몇째 자리까지 남기는지. NULL = 원문에 규칙 없음
+    rounding_mode       TEXT CHECK (rounding_mode IN ('ROUND', 'FLOOR', 'CEIL')),
+    attachment_id       INTEGER REFERENCES bid_attachment(id) ON DELETE SET NULL,  -- 근거 문서
+    source_sha256       TEXT,                            -- 추출에 쓴 문서 파일 지문 (정정 후에도 어느 버전인지 확인)
+    source_location     TEXT,                            -- 문서 안 위치 (구조 경로)
+    source_quote        TEXT,                            -- 해당 문구
+    verification_status TEXT NOT NULL DEFAULT 'UNVERIFIED'
+                            CHECK (verification_status IN ('UNVERIFIED', 'VERIFIED', 'REVIEW')),
+    updated_by          TEXT NOT NULL DEFAULT 'PARSER' CHECK (updated_by IN ('PARSER', 'LLM', 'USER')),
+    extracted_at        TEXT NOT NULL,
+    updated_at          TEXT NOT NULL,
+    UNIQUE (notice_no, position)
 );
-CREATE INDEX IF NOT EXISTS evaluation_rule_notice_idx ON evaluation_rule (notice_no, category);
 
--- 업체의 점수 시뮬레이션 입력·결과 (입찰가격·예정가격은 사용자 입력)
+-- 업체의 점수 시뮬레이션 입력·결과 (입찰가격·예정가격은 사용자 입력). 업체·공고당 직전 1건만 (다시 하면 덮어씀)
+-- Q&A 봇이 '저번 시뮬레이션 결과'를 답할 때도 이 행을 쓴다 → 요청 사용자의 ACTIVE 소속 업체 행만 내준다
 CREATE TABLE IF NOT EXISTS company_evaluation_draft (
     company_id          TEXT NOT NULL REFERENCES company(company_id) ON DELETE CASCADE,
     notice_no           TEXT NOT NULL REFERENCES bid_notice(notice_no) ON DELETE CASCADE,
@@ -46,6 +69,7 @@ CREATE TABLE IF NOT EXISTS company_evaluation_draft (
     total_score         REAL,                           -- 모든 필수 항목 산정 시에만
     calculation_status  TEXT NOT NULL DEFAULT 'IN_PROGRESS'
                             CHECK (calculation_status IN ('IN_PROGRESS', 'CALCULATED', 'ON_HOLD')),
+    updated_by          TEXT REFERENCES app_user(user_id) ON DELETE SET NULL,  -- 마지막으로 돌린 사용자
     updated_at          TEXT NOT NULL,
     PRIMARY KEY (company_id, notice_no)
 );

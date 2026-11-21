@@ -1,9 +1,8 @@
 -- 06. 필요서류·즐겨찾기·일정·알림
 -- 쓰는 모듈:
---   required_document_item  → 팀 결정 필요 (AI 추출 결과를 AI 파트가 직접 저장 vs 백엔드가 검증 후 저장)
---   document_template_item  → (예정) 시드 스크립트 (팀 정리본 1~7번)
---   company_document_check  → (예정) 서류 체크 API ← 프론트 필요서류 탭(UI-05). 현재 프론트는 브라우저 메모리(Map)에만 보관
---   favorite_notice         → (예정) 관심공고 API ← 프론트 별표 토글(UI-01·06)
+--   required_document_item  → LLM 추출 저장 (칸 형식은 AI 파트와 확정)
+--   company_document_check  → (예정) 서류 체크 API ← 프론트 필요서류 탭(UI-05). 자동 심사 입력
+--   favorite_notice         → (예정) 관심공고 API ← 프론트 별표 토글(UI-01·06), 사용자 개인별
 --   notice_schedule_event   → (예정) 수집기 또는 백엔드 (API 일정 + SRM 개찰일시 + 문서 추출 제출기한) — 팀 결정 필요
 --   notice_notification     → (예정) 알림 발송 모듈 — 담당 팀 결정 필요 (기획서상 알림 연동은 AI 팀)
 -- 읽는 모듈: (예정) 필요서류 탭·달력·추천 목록 API, 알림 발송
@@ -32,37 +31,25 @@ CREATE TABLE IF NOT EXISTS required_document_item (
     UNIQUE (notice_no, stage, position)
 );
 
--- 공고유형별 표준 제출서류 (팀 정리본 1~7번). 공고별 추출 전 참고/비교용
-CREATE TABLE IF NOT EXISTS document_template_item (
-    id                  INTEGER PRIMARY KEY,
-    work_type           TEXT NOT NULL,                  -- 예: 배전공사 총액계약
-    price_min           INTEGER,                        -- 추정가격 구간(VAT 제외), NULL = 하한 없음
-    price_max           INTEGER,                        -- 미만, NULL = 상한 없음
-    stage               TEXT NOT NULL CHECK (stage IN ('BASIC', 'ELIGIBILITY', 'QUALIFICATION', 'SUPERVISOR')),
-    submit_to           TEXT NOT NULL DEFAULT 'CONTRACT_DEPT' CHECK (submit_to IN ('CONTRACT_DEPT', 'SUPERVISOR_DEPT')),
-    position            INTEGER NOT NULL,
-    name                TEXT NOT NULL,
-    requirement_type    TEXT NOT NULL CHECK (requirement_type IN ('REQUIRED', 'CONDITIONAL', 'OPTIONAL')),
-    alternative_group   TEXT,
-    condition_note      TEXT,
-    reference_notice_no TEXT                            -- 대표 공고번호
-);
+-- 표준 제출서류 목록(document_template_item)은 2026-11-21 뺐다 (공고별 필요서류는 LLM 추출로 대체)
 
--- 업체별 서류 준비 체크
+-- 업체별 서류 준비 체크 (자동 심사 입력). 발급일은 사용자가 선택 입력, 비면 유효기간 판단은 '확인 필요'
+-- 같은 업체가 다른 공고에서 입력한 같은 서류의 발급일은 API가 다시 보여 준다
 CREATE TABLE IF NOT EXISTS company_document_check (
     company_id   TEXT NOT NULL REFERENCES company(company_id) ON DELETE CASCADE,
     item_id      INTEGER NOT NULL REFERENCES required_document_item(id) ON DELETE CASCADE,
     status       TEXT NOT NULL CHECK (status IN ('READY', 'NOT_READY', 'NOT_APPLICABLE', 'REVIEW')),
+    issued_at    TEXT,                                   -- 서류 발급일 YYYY-MM-DD (선택)
     updated_at   TEXT NOT NULL,
     PRIMARY KEY (company_id, item_id)
 );
 
--- 관심공고 (별표)
+-- 관심공고 (별표) — 사용자 개인별. 캘린더도 내 관심공고만 보여 준다
 CREATE TABLE IF NOT EXISTS favorite_notice (
-    company_id  TEXT NOT NULL REFERENCES company(company_id) ON DELETE CASCADE,
+    user_id     TEXT NOT NULL REFERENCES app_user(user_id) ON DELETE CASCADE,
     notice_no   TEXT NOT NULL REFERENCES bid_notice(notice_no) ON DELETE CASCADE,
     created_at  TEXT NOT NULL,
-    PRIMARY KEY (company_id, notice_no)
+    PRIMARY KEY (user_id, notice_no)
 );
 
 -- 달력 일정. 적격심사서류 제출기한은 통보서 접수일로부터 5일 이상 지정(적격심사기준 제8조 ②)이라
@@ -80,10 +67,12 @@ CREATE TABLE IF NOT EXISTS notice_schedule_event (
     UNIQUE (notice_no, event_type)
 );
 
--- 알림 발송 이력 (중복 발송 방지)
+-- 알림 발송 이력 (중복 발송 방지) — 수신 설정이 사용자 단위라 이력도 사용자 단위.
+-- company_id 는 어느 소속 업체의 맞춤 판정으로 보냈는지 기록 (업체 삭제 시 이력은 남김)
 CREATE TABLE IF NOT EXISTS notice_notification (
     id           INTEGER PRIMARY KEY,
-    company_id   TEXT NOT NULL REFERENCES company(company_id) ON DELETE CASCADE,
+    user_id      TEXT NOT NULL REFERENCES app_user(user_id) ON DELETE CASCADE,
+    company_id   TEXT REFERENCES company(company_id) ON DELETE SET NULL,
     notice_no    TEXT NOT NULL REFERENCES bid_notice(notice_no) ON DELETE CASCADE,
     channel      TEXT NOT NULL CHECK (channel IN ('EMAIL', 'TELEGRAM')),
     reason       TEXT NOT NULL DEFAULT 'NEW' CHECK (reason IN ('NEW', 'CORRECTED', 'CANCELLED')),
@@ -91,5 +80,5 @@ CREATE TABLE IF NOT EXISTS notice_notification (
     error        TEXT,
     sent_at      TEXT,
     created_at   TEXT NOT NULL,
-    UNIQUE (company_id, notice_no, channel, reason)
+    UNIQUE (user_id, notice_no, channel, reason)
 );

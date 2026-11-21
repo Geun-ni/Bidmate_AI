@@ -66,7 +66,35 @@ COLUMN_MIGRATIONS = [
     ("collect_run", "list_synced", "INTEGER"),
     ("collect_run", "updated_count", "INTEGER"),
     ("collect_run", "corrected_count", "INTEGER"),
+    # 2026-11-21 범위 정리
+    ("bid_document_content", "parser_version", "TEXT"),
+    ("company_document_check", "issued_at", "TEXT"),
+    ("company_evaluation_draft", "updated_by", "TEXT REFERENCES app_user(user_id) ON DELETE SET NULL"),
 ]
+
+# 2026-11-21 범위 정리로 없앤 표, 정의를 바꾼 표. 데이터가 있으면 지우지 않고 멈춘다
+RETIRED_TABLES = ("document_extraction", "license_equivalence", "company_notification_setting", "document_template_item")
+REDEFINED_TABLES = (("evaluation_rule", "rule_type"),        # (표, 새 정의에만 있는 칸)
+                    ("favorite_notice", "user_id"),
+                    ("notice_notification", "user_id"))
+
+
+def drop_retired(db):
+    """없앤 표와 옛 정의 표를 지운다(비어 있을 때만). 옛 정의 표는 뒤이어 스키마 파일이 새 정의로 만든다."""
+    existing = {r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    targets = [t for t in RETIRED_TABLES if t in existing]
+    targets += [t for t, column in REDEFINED_TABLES
+                if t in existing and column not in {r[1] for r in db.execute(f"PRAGMA table_info({t})")}]
+    for table in targets:
+        rows = db.execute(f"SELECT count(*) FROM {table}").fetchone()[0]
+        if rows:
+            raise RuntimeError(f"{table} 에 데이터 {rows}건이 있어 지우지 않았습니다. 백업 후 옮길 방법을 정하세요.")
+    if targets:
+        db.execute("DROP VIEW IF EXISTS v_recommendation")  # 옛 favorite_notice 를 참조 → 07 이 다시 만든다
+        for table in targets:
+            db.execute(f"DROP TABLE {table}")
+        db.commit()
+    return targets
 
 
 def migrate(db):
@@ -90,6 +118,7 @@ def init_db(db_path=DEFAULT_DB_PATH):
     """스키마를 적용한 연결을 반환한다. 외래키 검사를 켠다."""
     db = sqlite3.connect(db_path)
     db.execute("PRAGMA foreign_keys = ON")
+    drop_retired(db)
     for path in schema_files():
         db.executescript(path.read_text(encoding="utf-8"))
     migrate(db)
