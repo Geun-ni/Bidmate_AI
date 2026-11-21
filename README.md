@@ -32,9 +32,21 @@ SQLite 스키마와 초기화 방법은 [백엔드 DB 문서](backend/db/README.
 | --- | --- | --- |
 | 기획 | `docs/planning/`, `docs/decisions/` | 요구사항과 면허·지역·금액 매칭 규칙 정리 |
 | 디자인·프론트 | `docs/design/`, `frontend/` | 시안 작성, 공고 탐색·상세 화면 개선 |
-| 백엔드·데이터 | `backend/server.py`, `backend/matching.py`, `data/sample/demo.json` | 공고 수집·저장, 실제 자격 조건 검증, API 확장 |
+| 백엔드·데이터 | `backend/`, `scripts/`, `data/sample/demo.json` | 공고 수집·저장, 실제 자격 조건 검증, API 확장 |
 | AI | `ai/summary.py` | PDF 파싱, 구조화 추출, 원문 근거 검증, 추천 사유 문장 생성 |
 | 공통 | `docs/meetings/`, `docs/devlog/`, `docs/promotion/`, `.github/` | 공개용 회의록, 개발·홍보 기록, 이슈·PR 관리 |
+
+백엔드·데이터 폴더의 역할은 아래와 같습니다.
+
+| 위치 | 역할 |
+| --- | --- |
+| `backend/server.py`, `backend/notices_api.py`, `backend/matching.py` | 웹 서버, 수집한 공고 조회 API, 데모용 매칭 규칙 |
+| `backend/collector/` | 한전 공고·첨부파일 수집, 첨부 본문 읽기(HWP·HWPX·PDF), 대표 공고 검증 스크립트 |
+| `backend/db/` | SQLite 스키마(`schema/`), DB 초기화·기준정보 입력, 저장 데이터 정정·본문 재처리 도구 |
+| `scripts/` | 매일 12시 자동 수집 실행과 Windows 예약 작업 등록 |
+| `docs/devlog/data/` | 개발 일지에 쓴 검증 결과 원본(JSON) |
+
+수집기를 실행하면 `bidmate.sqlite3`(수집 DB), `downloads/`(첨부 원본), `logs/`(수집 로그)가 로컬에 생깁니다. 팀 공유용 DB·CSV는 `dist/`에 만듭니다. 이 파일과 폴더는 저장소에 올리지 않습니다.
 
 `GET /api/demo`는 가상 업체 프로필과 룰을 통과한 공고 목록을 반환합니다. 현재 금액 범위는 양 끝값을 포함하며, 공고에 등록된 모든 필수 면허와 허용 지역을 확인합니다. 요약과 체크리스트는 샘플에 작성된 원문 예시를 사용하고, 근거가 빠진 요약 항목은 `확인 필요`로 표시합니다. 샘플에서 공고를 추가하거나 업체 조건을 바꾼 뒤 페이지를 새로고침해 흐름을 확인할 수 있습니다.
 
