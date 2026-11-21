@@ -41,7 +41,12 @@ CREATE TABLE IF NOT EXISTS srm_region_district_master (
     code_id      TEXT PRIMARY KEY,                      -- 예: F_011013
     area_limit   TEXT NOT NULL REFERENCES srm_region_group_master(area_limit),
     region_code  TEXT NOT NULL,                         -- 예: 011013 (6자리, 앞자리 0 보존)
-    region_name  TEXT NOT NULL,                         -- 예: 춘천시
+    region_name  TEXT NOT NULL,                         -- 예: 춘천시, 청주시 청원구 (SRM 원래 이름)
     sub_area_yn  INTEGER NOT NULL DEFAULT 1 CHECK (sub_area_yn IN (0, 1)),
+    -- region_name 을 나눈 칸 (init_db.FILL_DISTRICT_PARTS 가 채움). 해당 없는 칸은 NULL
+    --   춘천시 → si / 홍천군 → gun / 강남구 → gu (광역시·특별시 구) / 청주시 청원구 → si + gu
+    si_name      TEXT,
+    gun_name     TEXT,
+    gu_name      TEXT,
     UNIQUE (area_limit, region_code)
 );

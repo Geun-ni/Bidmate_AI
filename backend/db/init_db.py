@@ -70,7 +70,19 @@ COLUMN_MIGRATIONS = [
     ("bid_document_content", "parser_version", "TEXT"),
     ("company_document_check", "issued_at", "TEXT"),
     ("company_evaluation_draft", "updated_by", "TEXT REFERENCES app_user(user_id) ON DELETE SET NULL"),
+    ("srm_region_district_master", "si_name", "TEXT"),
+    ("srm_region_district_master", "gun_name", "TEXT"),
+    ("srm_region_district_master", "gu_name", "TEXT"),
 ]
+
+# 시군구 이름을 시/군/구 칸으로 나눈다. region_name 은 'X시', 'X군', 'X구', 'X시 Y구' 네 꼴뿐 (253건 확인)
+FILL_DISTRICT_PARTS = """
+UPDATE srm_region_district_master SET
+  si_name  = CASE WHEN instr(region_name, ' ') > 0 THEN substr(region_name, 1, instr(region_name, ' ') - 1)
+                  WHEN region_name LIKE '%시' THEN region_name END,
+  gun_name = CASE WHEN instr(region_name, ' ') = 0 AND region_name LIKE '%군' THEN region_name END,
+  gu_name  = CASE WHEN instr(region_name, ' ') > 0 THEN substr(region_name, instr(region_name, ' ') + 1)
+                  WHEN region_name LIKE '%구' THEN region_name END"""
 
 # 2026-11-21 범위 정리로 없앤 표, 정의를 바꾼 표. 데이터가 있으면 지우지 않고 멈춘다
 RETIRED_TABLES = ("document_extraction", "license_equivalence", "company_notification_setting", "document_template_item")
@@ -110,6 +122,7 @@ def migrate(db):
                "WHERE api_created_at IS NULL")
     db.execute("UPDATE bid_notice SET last_collected_at = (SELECT fetched_at FROM bid_restriction_snapshot s "
                "WHERE s.notice_no = bid_notice.notice_no) WHERE last_collected_at IS NULL")
+    db.execute(FILL_DISTRICT_PARTS)
     db.commit()
     return added
 

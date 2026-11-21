@@ -16,7 +16,7 @@ import re
 import zipfile
 from pathlib import Path
 
-from backend.db.init_db import DEFAULT_DB_PATH, init_db
+from backend.db.init_db import DEFAULT_DB_PATH, FILL_DISTRICT_PARTS, init_db
 
 ROOT = Path(__file__).resolve().parents[2]
 REF = ROOT / "docs" / "planning" / "reference"
@@ -102,6 +102,7 @@ def seed(db):
     db.executemany("INSERT INTO srm_region_district_master (code_id, area_limit, region_code, region_name) "
                    "VALUES (?,?,?,?) ON CONFLICT(code_id) DO UPDATE SET region_name=excluded.region_name",
                    districts)
+    db.execute(FILL_DISTRICT_PARTS)  # 시/군/구 칸 나누기
 
     return {"license_master": len(licenses), "restricted_qualification_master": len(quals),
             "restricted_qualification_equivalence": len(equivalences),

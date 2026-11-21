@@ -17,6 +17,9 @@ dist/
 *.sqlite3-*
 *.sqlite3.bak-*
 
+# 공유·추출용 CSV
+*.csv
+
 # 운영체제(OS) 부산물
 .DS_Store
 Thumbs.db
