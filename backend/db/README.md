@@ -60,7 +60,7 @@ python -m backend.collector.collect --limit 5         # ④ 공고 수집
 | `collect_run` | `collect.py` ✅ | 수집 실행 결과 | 운영 확인용 |
 | `notice_analysis_cache` | **팀 결정 필요** (AI 파트 직접 vs 백엔드 API) | AI 분석 상태 | 예정: 수집기·AI 파트 재분석 판단 |
 | `company_bid_eligibility` | 예정: 룰 엔진 (업체 매칭은 현재 범위 밖) | `bid_restriction_*` + 업체 정보 | 07 뷰 |
-| `evaluation_rule` | 정근(배점·산식 추출). 그림 산식은 `formula_source='IMAGE'`로 남기고 LLM이 읽어 고침(`updated_by='LLM'`) | 적격심사기준 본문·수식·그림 | 예정: 점수 계산 탭 API |
+| `evaluation_rule` | `extract_evaluation_rules.py` (1단계: 배점표·입찰가격 산식·통과점수). 그림 산식은 `formula_source='IMAGE'`로 남기고 LLM이 읽어 고침(`updated_by='LLM'`) | 적격심사기준 본문·수식·그림 | 예정: 점수 계산 탭 API |
 | `company_evaluation_draft` | 예정: 점수 계산 API ← 프론트 점수 계산 탭(UI-04). 업체·공고당 직전 1건 | 사용자 입력(입찰가격·예정가격 등) + 계산 결과 | 예정: 점수 계산 탭 API, Q&A 봇(내 업체 것만) |
 | **`required_document_item`** | LLM 추출 저장 (칸 형식은 AI 파트와 확정) | AI 추출 (공고문·적격심사기준) | 예정: 필요서류 탭 API, 자동 심사 |
 | **`company_document_check`** | 예정: 서류 체크 API ← 프론트 필요서류 탭(UI-05) | 사용자 체크 + 발급일(선택) | 예정: 필요서류 탭 API, 자동 심사 |
@@ -164,6 +164,21 @@ python -m backend.db.reparse_documents --apply     # 백업 후 스키마 적용
 ```
 
 원본 파일 지문(sha256)이 DB와 같을 때만, 수식 개수가 그대로일 때만 바꾼다. 재파싱하면 본문 줄 번호가 바뀌므로 근거 위치는 줄 번호가 아니라 문서 구조(`별표1 > 제3조 > 표 2행`)와 해당 문구로 남긴다.
+
+### 적격심사 배점 추출 1단계 (2026-11-22)
+
+적격심사기준 본문에서 공고 추정가격(`presumed_price`)에 맞는 금액 구간의 [별표 1] 배점표를 골라 `evaluation_rule`에 넣는다(규칙 파서, LLM 안 씀). 1단계는 통과점수(`THRESHOLD`), 입찰가격 산식(`FORMULA`: 기준율·계수·A값 차감·반올림·최저평점·상한 구간), 수행능력 묶음과 분야별 배점(`GROUP`), 가감점 범위, 결격 감점(`FIXED`)까지다. 경영상태 구간표·신용등급표·신인도 표는 2·3단계에서 `GROUP` 아래에 붙인다.
+
+```bash
+python -m backend.db.extract_evaluation_rules                     # 미리보기 → dist/evaluation_rule_preview.json (DB 변경 없음)
+python -m backend.db.extract_evaluation_rules --notice E012608220 # 1건 결과 출력
+python -m backend.db.extract_evaluation_rules --apply             # 백업 후 스키마 적용 + 파서가 쓴 행만 지우고 다시 넣음
+```
+
+- 괄호 안 별도 구간(`전기·정보통신·소방공사 등은 …`)은 면허가 전기·정보통신·소방인 공사에 쓴다. 고시금액은 문서에 금액이 있으면 그 값, 없으면 공고일에 맞는 공식 고시금액(`OFFICIAL_NOTICE_AMOUNTS`, 2025~2026년 2.3억)을 쓴다. 기간 밖 공고는 2억~2.6억 사이를 판정 보류로 둔다 — 2027년 고시가 나오면 값을 추가해야 한다.
+- 배점 합계 ≠ 100, 산식·통과점수 못 찾음, 구간 판정 불가 등은 그 공고의 행을 `verification_status='REVIEW'`로 넣는다. `updated_by='LLM'`·`'USER'`로 고친 행이 있는 공고는 다시 돌려도 건드리지 않는다.
+- 파서가 확인할 수 없는 공고(PDF 기준서, 기준서 금액 구간이 공고 추정가격과 안 맞음 등)는 행을 만들지 않는다(수집기 확인 불가). AI 파트가 `fetch_attachments.llm_targets()`로 찾아 원본을 LLM으로 읽고 `updated_by='LLM'`으로 넣는다. 상한 구간 등은 원문 값을 그대로 쓴다(E012608225 `88.25% 이상 85점`).
+- `rule_type`에 묶음 행 `GROUP`을 추가했다(표가 비어 있으면 `init_db`가 새 정의로 다시 만든다).
 
 ## 7. 아직 정하지 않은 것
 

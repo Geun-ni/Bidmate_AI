@@ -105,6 +105,17 @@ FROM collect_run ORDER BY id DESC LIMIT 5;
 - 문서 확인: 받은 내용이 HTML 오류 페이지·빈 응답이거나 확장자(hwp/hwpx/pdf)와 파일 형식이 다르면 파일을 남기지 않고 `download_status='FAILED'`(`error`에 이유)로 기록하고 SRM 첨부에서 다시 찾는다(E012606980: API 링크가 HTML 1,064 bytes를 줌)
 - 문서 종류: 파일명에 `적격심사` → 적격심사기준, `공고문` → 공고문. 단 `안내`·`담당자`가 들어간 이름은 공고문으로 보지 않는다(`공고 문의 담당자 안내.hwp`는 공백을 지우면 `공고문의…`가 됨, E012607149)
 - 이름에 `적격심사`가 없는 기준서: SRM 보완에서도 적격심사기준을 못 찾으면, 이름에 `심사기준`이 들어간 hwp·hwpx·pdf(`인원장비` 제외, 예: `pq심사기준`, `입찰참가자격사전심사기준`)를 받아 **40자 이하 문단에 `적격심사…기준`이 있을 때만** 기준서로 저장한다(E012606754: `2. pq심사기준_동부안 최종수정.hwp` 안의 `5.2.1 적격심사기준`). 저장된 기준서 69개 중 68개가 이 본문 판정을 통과하고, 나머지 1개는 `적격심사기준 제출서류 목록표`(기준서 아님)
+- 배점표 없는 기준서: 적격심사기준을 받았어도 그 안에 배점표(입찰가격 행이 있는 표, `extract_evaluation_rules.top_tables`)가 없으면 진짜 기준서를 놓친 것으로 보고 SRM 전체 첨부에서 아직 안 받은 `적격심사`·`심사기준` 파일을 더 받는다(E012606999: API 5개 중 `PQ 세부기준`만 잡히고 배점표가 든 `3. 적격심사 세부기준`은 6번째 이후 첨부). PDF만 있는 공고는 매번 이 확인을 하므로 SRM 첨부 목록 요청이 1번 늘어난다
+- AI 파트(LLM)용 첨부 전달은 `fetch_attachments.py` (DB에 쓰지 않음)
+  - 파서가 배점을 못 뽑은 공고(PDF 기준서, 기준서 금액 구간이 공고 추정가격과 안 맞음 등)는 `llm_targets()`로 찾고, 수집기가 받아 둔 기준서를 `saved_documents()`로 넘긴다(로컬에 없으면 SRM에서 받음)
+  - 그 밖의 첨부(예: `시방서 등.zip`)는 수집기가 받지 않는다. 필요할 때 `fetch_attachments()`로 이름을 골라 받는다
+
+```bash
+python -m backend.collector.fetch_attachments --llm-targets                 # 파서가 못 뽑은 공고번호 (evaluation_rule 비어 있음)
+python -m backend.collector.fetch_attachments E012608048 --saved           # 받아 둔 기준서 → downloads/<공고번호>/extra/
+python -m backend.collector.fetch_attachments E012608185 --list            # SRM 첨부 목록
+python -m backend.collector.fetch_attachments E012608185 --name "\.zip$"   # SRM 첨부 받기 → downloads/<공고번호>/extra/
+```
 - SRM 보완 도중 차단·오류로 끝나면 공고문·기준서 확보 여부를 `0`(없음)이 아니라 `NULL`(미확인)로 남겨 다음 실행에서 다시 찾는다. 예전엔 `0`으로 저장돼 완료로 간주됐다(E012608004, 2026-11-20 재수집 표시로 바로잡음)
 - 금액: SRM `overHeadCostAmount`는 공고문 금액표의 **경비**라 `overhead_cost_amount`에 저장한다. SRM에는 순공사원가 값이 없어 `net_construction_cost`는 채우지 않는다(NULL=미확인)
 - 개인정보 미저장: SRM 응답의 담당자 이름·사번·연락처(`creator*`, `updater*`, `representative*` 등)는 저장 전에 제거

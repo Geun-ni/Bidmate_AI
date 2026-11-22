@@ -28,6 +28,8 @@ CREATE TABLE IF NOT EXISTS company_bid_eligibility (
 --   TABLE     {"rows": [{"min": null, "max": 50, "score": 7}, ...]} 또는 {"rows": [{"grade": "AAA", "score": 15}, ...]}
 --   FIXED     {"score": 1, "condition": "원문 조건 문구"}
 --   THRESHOLD {"pass_score": 95}
+--   GROUP     하위 항목을 묶는 행 (예: 당해공사 수행능력 30, 시공경험 18). max_score 가 묶음 한도.
+--             가감점 묶음은 {"min": -5, "max": 0.1} 처럼 범위를 둔다
 -- 근거 위치(source_location)는 본문 줄 번호가 아니라 '별표1 > 제3조 > 표 2행'처럼 문서 구조로 쓴다
 -- (재파싱하면 줄 번호가 바뀜). 다시 찾을 때는 source_quote 를 본문에서 검색한다.
 CREATE TABLE IF NOT EXISTS evaluation_rule (
@@ -38,7 +40,7 @@ CREATE TABLE IF NOT EXISTS evaluation_rule (
     category            TEXT NOT NULL CHECK (category IN
                             ('PRICE', 'PERFORMANCE', 'MANAGEMENT', 'OFFICE', 'BONUS', 'PENALTY', 'PASS_SCORE')),
     item_name           TEXT NOT NULL,                   -- 원문 항목명 그대로 (예: 시공경험, 부채비율)
-    rule_type           TEXT NOT NULL CHECK (rule_type IN ('FORMULA', 'TABLE', 'FIXED', 'THRESHOLD')),
+    rule_type           TEXT NOT NULL CHECK (rule_type IN ('GROUP', 'FORMULA', 'TABLE', 'FIXED', 'THRESHOLD')),
     max_score           REAL,                            -- 배점(점). 감점은 음수 한도, 통과점수 행은 NULL
     formula             TEXT,                            -- FORMULA: 산식 (예: 50-2×|(90/100)-(입찰가격/예정가격)|×100)
     formula_source      TEXT CHECK (formula_source IN ('EQUATION', 'TEXT', 'IMAGE')),  -- 산식이 어디서 왔는지
