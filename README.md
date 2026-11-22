@@ -20,6 +20,7 @@ python -m backend.server
 | --- | --- |
 | `GET /api/notices` | 진행 중 한전 공사·용역 적격심사 공고 목록 (`?include_closed=1`이면 마감 포함) + 마지막 수집 실행 결과. 값이 없으면 `null` |
 | `GET /api/notices/<공고번호>` | 기본정보 + 면허·적격자격 조건(조회 전·실패는 `status: "확인 필요"`) + SRM 상세(A금액·경비·개찰일시) |
+| `GET /api/notices/<공고번호>/evaluation` | 적격심사 배점·산식 계층(`rules`: 통과점수·입찰가격 산식·수행능력 분야와 세부 표·가감점·결격) + 요약(`summary`). 배점이 없으면 `status: "확인 필요"`와 이유(기준서 없음, AI 분석 대기 등) |
 | `GET /api/demo` | 가상 업체 프로필과 룰을 통과한 공고 목록 (기본 화면이 사용) |
 
 ## 데이터베이스 스키마

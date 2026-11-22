@@ -4,6 +4,7 @@
 - 상세: 면허·적격자격 조건은 SRM 조회가 성공한 경우에만 값을 주고, 조회 전·실패는 '확인 필요'.
 - 업체 매칭 결과가 아니다 (company_bid_eligibility 는 읽지 않음).
 """
+import json
 import sqlite3
 from datetime import datetime
 from pathlib import Path
@@ -101,6 +102,54 @@ def get_notice(db, notice_no):
         FROM bid_attachment WHERE notice_no=? ORDER BY doc_kind, filename
     """, (notice_no,))]
     return notice
+
+
+def _rule_node(row):
+    params = row["parameters"]
+    return {
+        "id": row["id"], "category": row["category"], "name": row["item_name"], "rule_type": row["rule_type"],
+        "max_score": row["max_score"], "formula": row["formula"], "formula_source": row["formula_source"],
+        "parameters": json.loads(params) if params else None, "input_key": row["input_key"],
+        "rounding": {"digits": row["rounding_digits"], "mode": row["rounding_mode"]}
+        if row["rounding_digits"] is not None else None,
+        "verification_status": row["verification_status"], "updated_by": row["updated_by"],
+        "source": {"location": row["source_location"], "quote": row["source_quote"]},
+        "children": [],
+    }
+
+
+def get_evaluation(db, notice_no):
+    """적격심사 배점·산식 (evaluation_rule) → 계층 구조. 공고가 범위 밖이면 None.
+    배점이 없으면 이유(기준서 없음 / 파서가 못 읽어 AI 분석 대기)를 준다."""
+    notice = db.execute(f"SELECT notice_no, criteria_doc_found FROM bid_notice WHERE notice_no=? AND {SCOPE}",
+                        (notice_no,)).fetchone()
+    if notice is None:
+        return None
+    rows = db.execute("""SELECT e.*, a.filename FROM evaluation_rule e LEFT JOIN bid_attachment a ON a.id = e.attachment_id
+                         WHERE e.notice_no=? ORDER BY e.position""", (notice_no,)).fetchall()
+    if not rows:
+        has_doc = db.execute("SELECT 1 FROM bid_attachment WHERE notice_no=? AND doc_kind='CRITERIA' "
+                             "AND download_status='SUCCESS'", (notice_no,)).fetchone()
+        reason = ("기준서를 자동으로 읽지 못함 — AI 분석 대기" if has_doc else
+                  "적격심사기준을 아직 받지 못함" if notice["criteria_doc_found"] is None else "적격심사기준 없음")
+        return {"notice_no": notice_no, "status": "확인 필요", "reason": reason, "summary": None, "rules": []}
+    nodes = {r["id"]: _rule_node(r) for r in rows}
+    tree = []
+    for r in rows:
+        parent = nodes.get(r["parent_id"]) if r["parent_id"] else None
+        (parent["children"] if parent else tree).append(nodes[r["id"]])
+    top = {n["category"]: n for n in tree}
+    review = sum(1 for r in rows if r["verification_status"] == "REVIEW")
+    summary = {
+        "pass_score": top["PASS_SCORE"]["parameters"]["pass_score"] if "PASS_SCORE" in top else None,
+        "price_max": top["PRICE"]["max_score"] if "PRICE" in top else None,
+        "performance_max": sum(n["max_score"] or 0 for n in tree if n["rule_type"] == "GROUP") or None,
+        "review_count": review,
+        "source_file": rows[0]["filename"],
+        "extracted_at": max(r["updated_at"] for r in rows),
+    }
+    return {"notice_no": notice_no, "status": "확인 필요" if review else "추출됨",
+            "reason": f"원문 확인이 필요한 항목 {review}개" if review else None, "summary": summary, "rules": tree}
 
 
 def last_run(db):

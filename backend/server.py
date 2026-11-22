@@ -61,7 +61,7 @@ class DemoHandler(SimpleHTTPRequestHandler):
             super().do_GET()
 
     def handle_notices(self, url):
-        """GET /api/notices[?include_closed=1] · GET /api/notices/<공고번호> — 수집기 DB(bidmate.sqlite3) 조회."""
+        """GET /api/notices[?include_closed=1] · GET /api/notices/<공고번호>[/evaluation] — 수집기 DB 조회."""
         try:
             db = notices_api.connect()
         except notices_api.DatabaseMissing as exc:
@@ -74,7 +74,14 @@ class DemoHandler(SimpleHTTPRequestHandler):
                 keyword = query.get("q", [""])[0]
                 self.send_json(200, notices_api.list_notices(db, include_closed, q=keyword))
                 return
-            notice = notices_api.get_notice(db, unquote(url.path.rsplit("/", 1)[1]))
+            parts = url.path.strip("/").split("/")  # ['api', 'notices', 공고번호(, 'evaluation')]
+            if len(parts) == 4 and parts[3] == "evaluation":
+                notice = notices_api.get_evaluation(db, unquote(parts[2]))
+            elif len(parts) == 3:
+                notice = notices_api.get_notice(db, unquote(parts[2]))
+            else:
+                self.send_json(404, {"error": "없는 경로입니다."})
+                return
             if notice is None:
                 self.send_json(404, {"error": "공고를 찾을 수 없습니다."})
             else:

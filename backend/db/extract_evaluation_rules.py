@@ -1119,6 +1119,64 @@ def method_table(lines, s, e):
     return out
 
 
+GRADE_BOUND = re.compile(r"(\d+(?:\.\d+)?)\s*(회|명|건|점|년|개월)\s*(이상|초과|미만|이하)?")
+GRADE_NOT_BOUND = re.compile(r"최근\s*\d+\s*(?:년|개월)|\d+\s*(?:년|개월)\s*(?:간|이내|평균|동안)|\d+\s*개월\s*평균")
+
+
+def grade_bounds(grade):
+    """등급 문구의 숫자 조건 → (min, min_inc, max, max_inc, unit) 또는 None.
+    '2회 받은 자' → 2~2 / '3회 이상' → 3~ / '누계 벌점 0.5점 이상 1점 미만' → 0.5~1 / '사망자 1명' → 1~1.
+    '최근 1년동안', '6개월 평균' 같은 기간 설명은 조건으로 보지 않는다."""
+    text = GRADE_NOT_BOUND.sub(" ", grade)
+    found = GRADE_BOUND.findall(text)
+    if not found or len({u for _, u, _ in found}) > 1:
+        return None
+    unit = found[0][1]
+    lo = hi = None
+    lo_inc = hi_inc = True
+    for value, _, kind in found:
+        v = float(value)
+        if kind in ("이상", "초과"):
+            lo, lo_inc = v, kind == "이상"
+        elif kind in ("미만", "이하"):
+            hi, hi_inc = v, kind == "이하"
+        elif len(found) == 1:
+            lo = hi = v  # '2회 받은 자', '사망자 1명'
+    if lo is None and hi is None:
+        return None
+    return lo, lo_inc, hi, hi_inc, unit
+
+
+def add_grade_bounds(rows):
+    """등급표 rows 에 숫자 범위(min·max·unit)를 덧붙인다 (원문 grade·score 는 그대로).
+    '과징금 처분을 받은 사실이 있는 자 / 2회 / 3회 이상'처럼 첫 등급에만 숫자가 없고 다음 등급이 정확히 2회면
+    첫 등급을 1회로 본다 (inferred=True)."""
+    bounds = [grade_bounds(r["grade"]) for r in rows]
+    nxt = bounds[1] if len(rows) >= 2 else None
+    if bounds[0] is None and nxt and nxt[0] == 2 and nxt[4] in ("회", "명", "건"):
+        # 다음 등급이 '2회' 또는 '2회 이상' → 첫 등급('처분을 받은 사실이 있는 자')은 1회 (팀 결정 2026-11-22)
+        bounds[0] = (1.0, True, 1.0, True, nxt[4])
+        rows[0]["inferred"] = True
+    for r, b in zip(rows, bounds):
+        if b:
+            r.update(min=b[0], min_inc=b[1] if b[0] is not None else None, max=b[2],
+                     max_inc=b[3] if b[2] is not None else None, unit=b[4])
+    return rows
+
+
+def grade_input(rows):
+    """등급표를 화면에서 어떻게 받을지 → {input_type, unit}
+    count : 모든 등급에 숫자 범위가 있음 → 숫자(횟수·인원·벌점 등) 입력, 점수는 범위로 고름
+    check : 숫자 없는 등급 1개 → 해당/비해당
+    select: 숫자 없는 등급 여러 개(또는 숫자 있는 등급과 섞임) → 등급 하나 고르기 (해당 없음 포함)"""
+    units = {r.get("unit") for r in rows}
+    if all(r.get("unit") for r in rows) and len(units) == 1:
+        return {"input_type": "count", "unit": units.pop()}
+    if len(rows) == 1:
+        return {"input_type": "check", "unit": None}
+    return {"input_type": "select", "unit": None}
+
+
 def bonus_parent(rows, group):
     """신인도 세부 행을 붙일 1단계 가감점 묶음 행 번호 (건설안전/일반 이름으로 맞추고, 없으면 첫 가감점 묶음)"""
     cands = [i for i, r in enumerate(rows) if r["category"] == "BONUS" and r["rule_type"] == "GROUP"
@@ -1375,10 +1433,11 @@ def extract_notice(db, notice_no):
                     scores = [to_num(x) for x in re.findall(SIGNED, cells[k + 1])]
                     if len(grades) >= 2 and len(grades) == len(scores):
                         in_table = True
+                        grade_rows = add_grade_bounds([{"grade": g, "score": sc} for g, sc in zip(grades, scores)])
                         add(parent=i, category="BONUS", item_name=r["item_name"], rule_type="TABLE",
-                            max_score=max(scores), input_key="bonus_grade",
+                            max_score=None, input_key="bonus_grade",
                             parameters={"group": r["item_name"], "condition": cell.split(" / A.")[0][:300],
-                                        "rows": [{"grade": g, "score": sc} for g, sc in zip(grades, scores)]},
+                                        "rows": grade_rows, **grade_input(grade_rows)},
                             source_location="[별표 1] 배점표 > 신인도 등급", source_quote=r["source_quote"])
         if not found and not in_table:
             result["detail_issues"].append("신인도 세부 표 못 찾음")
@@ -1386,7 +1445,8 @@ def extract_notice(db, notice_no):
             parent = bonus_parent(rows, b["group"])
             if parent is None:
                 continue
-            params = {"group": b["group"][:100], "condition": b["condition"], "rows": b["rows"]}
+            params = {"group": b["group"][:100], "condition": b["condition"], "rows": add_grade_bounds(b["rows"])}
+            params.update(grade_input(params["rows"]))
             if b["scale"]:
                 params["scale"] = {"numerator": b["scale"][0], "denominator": b["scale"][1]}
             if b.get("rule"):  # 감리: 건당·기간당 점수 + 최대 점수 (규칙 문장)
@@ -1405,7 +1465,7 @@ def extract_notice(db, notice_no):
                     source_location="[별표 2] 신인도", source_quote=b["quote"])
                 continue
             add(parent=parent, category="BONUS", item_name=b["name"], rule_type="TABLE",
-                max_score=max(r["score"] for r in b["rows"]), parameters=params, input_key="bonus_grade",
+                max_score=None, parameters=params, input_key="bonus_grade",
                 source_location="[별표 2] 신인도", source_quote=b["quote"])
 
     # 4) 검산: 수행능력 묶음 합 + 입찰가격 = 100, 묶음 안 분야 합 = 묶음 한도
