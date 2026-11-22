@@ -1436,9 +1436,16 @@ def extract_notice(db, notice_no):
 
 
 # ------------------------------------------------------------------ 저장
-def insert(db, results, now):
+def insert(db, results, now, only_these=False):
+    """파서 행을 지우고 다시 넣는다. only_these=True 면 results 에 있는 공고의 파서 행만 바꾼다 (수집 직후 1건 갱신)."""
     edited = {r[0] for r in db.execute("SELECT DISTINCT notice_no FROM evaluation_rule WHERE updated_by != 'PARSER'")}
-    db.execute("DELETE FROM evaluation_rule WHERE updated_by='PARSER'")
+    # LLM·사용자가 고친 행이 있는 공고는 파서 행도 그대로 둔다 (지우면 고친 행만 남아 구조가 깨짐)
+    keep = "AND notice_no NOT IN (SELECT notice_no FROM evaluation_rule WHERE updated_by != 'PARSER')"
+    if only_these:
+        db.executemany(f"DELETE FROM evaluation_rule WHERE updated_by='PARSER' AND notice_no=? {keep}",
+                       [(r["notice_no"],) for r in results])
+    else:
+        db.execute(f"DELETE FROM evaluation_rule WHERE updated_by='PARSER' {keep}")
     n = 0
     for res in results:
         if res["notice_no"] in edited:
@@ -1461,6 +1468,14 @@ def insert(db, results, now):
             ids.append(cur.lastrowid)
             n += 1
     return n
+
+
+def refresh_notice(db, notice_no):
+    """수집기가 공고 1건을 처리한 뒤 부른다: 그 공고의 배점 행을 다시 뽑아 바꾼다 (커밋은 호출자).
+    → (넣은 행 수, 1단계 문제, 2단계 세부 표 문제)"""
+    res = extract_notice(db, notice_no)
+    n = insert(db, [res], datetime.now().isoformat(timespec="seconds"), only_these=True)
+    return n, res["issues"], res.get("detail_issues", [])
 
 
 def summarize(results):
