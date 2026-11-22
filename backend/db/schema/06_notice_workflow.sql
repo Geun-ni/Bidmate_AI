@@ -2,7 +2,7 @@
 -- 쓰는 모듈:
 --   required_document_item  → LLM 추출 저장 (칸 형식은 AI 파트와 확정)
 --   company_document_check  → (예정) 서류 체크 API ← 프론트 필요서류 탭(UI-05). 자동 심사 입력
---   favorite_notice         → (예정) 관심공고 API ← 프론트 별표 토글(UI-01·06), 사용자 개인별
+--   favorite_notice         → backend/favorites.py (관심공고 API) ← 프론트 별표 토글(UI-01·06), 사용자 개인별
 --   notice_schedule_event   → (예정) 수집기 또는 백엔드 (API 일정 + SRM 개찰일시 + 문서 추출 제출기한) — 팀 결정 필요
 --   notice_notification     → (예정) 알림 발송 모듈 — 담당 팀 결정 필요 (기획서상 알림 연동은 AI 팀)
 -- 읽는 모듈: (예정) 필요서류 탭·달력·추천 목록 API, 알림 발송

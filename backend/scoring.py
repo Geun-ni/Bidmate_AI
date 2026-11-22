@@ -13,6 +13,9 @@
     TABLE 재무비율 → 비율(%) 또는 영업기간(년), 신용평가등급 → 등급 문자열("A0", "BBB+" …)
     TABLE 숙지도 → "해당사업소" | "인접사업소" | "비인접사업소" | "광역 밖"
     TABLE 신인도(input_type) → count: 숫자, check: true/false, select: 등급 번호(0부터) 또는 null(해당 없음)
+    감리 PQ: 경력·중복 개소 → 숫자(pq_grade count), 비상주 등급 → 번호(pq_grade select), 유사용역 → 실적 합계(원),
+             자본·유동비율 → 업체 비율(%), 상주 중복배치 없음 → true/false
+    FORMULA 사업수행능력 → 평가점수(0~100)
     FIXED → true/false (필수장비는 보유 장비 이름 목록)
     세부 표가 없는 GROUP → 직접 점수 (배점 범위 안으로 자름)
 """
@@ -94,6 +97,13 @@ def _leaf(node, inputs, ctx):
         if value is None:
             return _result(node, None, UNCALC)
         return _result(node, _round(min(p["cap"] * float(value) / p["days"], p["cap"]), node["rounding"]))
+    if rt == "FORMULA" and ik == "pq_score":  # 사업수행능력: 평가점수/100 × 배점
+        if value is None:
+            return _result(node, None, UNCALC)
+        v = float(value)
+        if not 0 <= v <= p["full"]:
+            return _result(node, None, UNCALC, f"평가점수는 0~{p['full']:g}")
+        return _result(node, _round(v / p["full"] * p["points"], node["rounding"]))
     if rt == "FORMULA" and ik == "bonus_count":  # 감리 가점·감점: 건수 × 건당 점수, 최대점
         if value is None:
             return _result(node, None, UNCALC)
@@ -122,7 +132,7 @@ def _leaf(node, inputs, ctx):
             return _result(node, p.get("no_grade_score", 0), note="유효한 신용평가등급 없음")
         row = _credit_match(str(value), p["rows"])
         return _result(node, row["score"]) if row else _result(node, None, UNCALC, f"표에 없는 등급: {value}")
-    if rt == "TABLE" and ik in ("debt_ratio", "current_ratio", "equity_ratio", "business_years"):
+    if rt == "TABLE" and ik in ("debt_ratio", "current_ratio", "equity_ratio", "business_years", "similar_amount"):
         if value is None:
             return _result(node, None, UNCALC)
         v = float(value)
@@ -133,6 +143,13 @@ def _leaf(node, inputs, ctx):
                 return _result(node, min(r["score"] for r in p["rows"]), note="부(-)의 수치 → 최저 배점")
             v = v / p["basis"]
         row = _match_rows(v, p["rows"])
+        return _result(node, row["score"]) if row else _result(node, None, UNCALC, "구간에 안 맞음")
+    if rt == "TABLE" and ik == "pq_grade":  # 감리 PQ: 구간(count) 또는 등급 번호(select)
+        if value is None:
+            return _result(node, None, UNCALC)
+        if p.get("input_type") == "select":
+            return _result(node, p["rows"][int(value)]["score"])
+        row = _match_rows(float(value), p["rows"])
         return _result(node, row["score"]) if row else _result(node, None, UNCALC, "구간에 안 맞음")
     if rt == "TABLE" and ik == "bonus_grade":
         kind = p.get("input_type")
@@ -151,8 +168,9 @@ def _leaf(node, inputs, ctx):
     if rt == "GROUP" and not node["children"]:  # 세부 표가 없는 분야: 직접 점수
         if value is None:
             return _result(node, None, UNCALC, "세부 규칙 없음 — 점수 직접 입력")
-        lo = p.get("min", 0 if (node["max_score"] or 0) >= 0 else node["max_score"])
-        hi = p.get("max", node["max_score"] if node["max_score"] is not None else float(value))
+        mx = node["max_score"]
+        lo = p.get("min", 0 if (mx or 0) >= 0 else mx)
+        hi = p.get("max", float(value) if mx is None else mx if mx >= 0 else 0)  # 감점 항목은 [감점 한도, 0]
         return _result(node, max(lo, min(hi, float(value))), note="직접 입력")
     return _result(node, None, HOLD, f"계산 방법 미지원 ({rt}/{ik})")
 

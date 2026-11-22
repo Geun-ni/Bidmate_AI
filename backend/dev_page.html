@@ -1,0 +1,419 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BidMate API</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 16px; max-width: 900px; background: #fff; color: #111; }
+  h1 { font-size: 20px; } h2 { font-size: 16px; margin: 0 0 8px; }
+  section { border: 1px solid #ccc; border-radius: 6px; padding: 12px; margin: 12px 0; }
+  input, select { padding: 4px; margin: 2px 4px 2px 0; }
+  button { padding: 4px 10px; margin: 2px 4px 2px 0; cursor: pointer; }
+  #me { font-weight: bold; }
+  .form table, #result table { border-collapse: collapse; margin: 8px 0; width: 100%; }
+  .form td, #result td, #result th { border-bottom: 1px solid #e3e3e3; padding: 4px 6px; vertical-align: top; font-size: 14px; }
+  .hint { color: #666; font-size: 12px; }
+  .grp { font-weight: bold; background: #f6f6f6; }
+  .ok { color: #0a7a2f; } .wait { color: #a15c00; }
+  pre { background: #f4f4f4; padding: 8px; max-height: 420px; overflow: auto; white-space: pre-wrap; word-break: break-all; }
+  .status { font-weight: bold; }
+  .stack input { display: block; width: 260px; margin: 6px 0; }
+  .msg { color: #0a7a2f; font-weight: bold; } .err { color: #b00020; }
+  #rules table { border-collapse: collapse; width: 100%; margin: 8px 0; }
+  #rules td, #rules th { border-bottom: 1px solid #e3e3e3; padding: 4px 6px; font-size: 14px; vertical-align: top; text-align: left; }
+</style>
+</head>
+<body>
+<h1>BidMate API</h1>
+<p id="meLine" hidden>로그인 상태: <span id="me"></span>
+  <button onclick="call('POST', '/api/auth/logout').then(refreshMe)">로그아웃</button></p>
+
+<!-- 회원가입 페이지 (로그인 칸의 회원가입 버튼으로 이동) -->
+<div id="signupView" hidden>
+<section>
+  <h2>회원가입</h2>
+  <div class="stack">
+    <input id="suEmail" placeholder="abcd@example.com">
+    <input id="suPw" type="password" placeholder="비밀번호 (8자 이상)">
+    <input id="suPw2" type="password" placeholder="비밀번호 확인">
+  </div>
+  <p class="hint">기존 업체에 합류하려면 사업자등록번호로 찾아 고르세요. 업체 소유자가 승인해야 업체 정보를 볼 수 있습니다.
+    새 업체는 가입 후 직접 등록합니다.</p>
+  <input id="suBrn" placeholder="사업자등록번호 (선택)" size="20">
+  <button onclick="findCompany()">업체 찾기</button>
+  <select id="suJoin"><option value="">합류 안 함</option></select>
+  <br>
+  <button onclick="signup()">가입하기</button>
+  <button onclick="showView('main')">로그인 화면으로 이동</button>
+  <p id="suMsg"></p>
+</section>
+</div>
+
+<div id="mainView">
+<section id="loginBox">
+  <h2>1. 로그인</h2>
+  <div class="stack">
+    <input id="email" placeholder="abcd@example.com">
+    <input id="password" type="password" placeholder="비밀번호">
+  </div>
+  <button onclick="auth('login')">로그인</button>
+  <button onclick="showView('signup')">회원가입</button>
+</section>
+
+<section>
+  <h2>2. 업체 (로그인 필요)</h2>
+  <input id="cname" placeholder="업체명" value="가상전기(주)">
+  <input id="cbrn" placeholder="사업자등록번호 (선택)" size="16">
+  <input id="caddr" placeholder="주소 검색으로 선택" size="34" readonly>
+  <button onclick="window.open('/dev/juso-popup', 'juso', 'width=570,height=420,scrollbars=yes,resizable=yes')">주소 검색</button>
+  <button onclick="createCompany()">업체 등록</button>
+  <button onclick="withCid(id => juso ? call('PUT', '/api/companies/' + id, {head_office_address: v('caddr'), juso}) : alert('먼저 주소 검색으로 새 주소를 고르세요.'))">주소 수정</button>
+  <br><small id="jusoInfo">본점 소재지는 주소 검색으로만 입력합니다. 광역·시군구(SRM 지역)는 고른 주소로 서버가 정합니다.</small>
+  <button onclick="myCompanies()">내 업체 목록</button>
+  <br>
+  <input id="cid" placeholder="업체 ID" size="38">
+  <button onclick="withCid(id => call('GET', '/api/companies/' + id))">업체 조회</button>
+  <button onclick="withCid(id => call('PUT', '/api/companies/' + id, {company_name: v('cname')}))">업체명 수정</button>
+  <button onclick="showMembers()">합류 요청 관리</button>
+  <p id="joinInfo" class="hint"></p>
+  <div id="members"></div>
+</section>
+
+<section>
+  <h2>3. 관심공고 · 달력 (로그인 필요)</h2>
+  <input id="notice" placeholder="공고번호" value="E012606754">
+  <button onclick="call('PUT', '/api/favorites/' + v('notice'))">관심공고 추가</button>
+  <button onclick="call('DELETE', '/api/favorites/' + v('notice'))">관심공고 해제</button>
+  <button onclick="call('GET', '/api/favorites')">내 관심공고</button>
+  <button onclick="call('GET', '/api/schedule?favorites=1')">관심공고 일정</button>
+</section>
+
+<section>
+  <h2>4. 공고 · 배점 · 점수 (로그인 없이)</h2>
+  <input id="notice2" placeholder="공고번호 입력">
+  <button onclick="call('GET', '/api/notices/' + v('notice2'))">검색</button>
+  <br>
+  <button id="rulesBtn" onclick="toggleRules()">배점·산식 열기</button>
+  <button onclick="call('GET', '/api/notices/' + v('notice2') + '/schedule')">일정</button>
+  <button onclick="buildForm()">점수 입력칸 만들기</button>
+  <div id="rules" hidden></div>
+  <div id="form" class="form"></div>
+  <button onclick="score(false)">점수 계산 (저장 안 함)</button>
+  <button onclick="score(true)">점수 계산 + 저장 (업체 ID 필요)</button>
+  <button onclick="withCid(async id => { const r = await call('GET', '/api/companies/' + id + '/evaluation-drafts/' + v('notice2')); if (r.data && r.data.inputs) fillForm(r.data.inputs); })">저장한 점수 불러오기</button>
+  <div id="result"></div>
+</section>
+
+<section>
+  <h2>5. 아무 GET 주소</h2>
+  <input id="path" value="/api/notices" size="50">
+  <button onclick="call('GET', v('path'))">보내기</button>
+</section>
+
+</div>
+
+<p>응답: <span id="status" class="status"></span></p>
+<pre id="out"></pre>
+
+<script>
+const v = id => document.getElementById(id).value.trim();
+
+async function call(method, path, body) {
+  const opt = { method, headers: {} };
+  if (body !== undefined) { opt.headers['Content-Type'] = 'application/json'; opt.body = JSON.stringify(body); }
+  const res = await fetch(path, opt);
+  const text = await res.text();
+  let data; try { data = JSON.parse(text); } catch { data = text; }
+  document.getElementById('status').textContent = `${method} ${path} → ${res.status}`;
+  document.getElementById('out').textContent = typeof data === 'string' ? data : JSON.stringify(data, null, 2);
+  return { status: res.status, data };
+}
+
+function showView(name) {  // main(로그인·기능) / signup(회원가입)
+  document.getElementById('mainView').hidden = name !== 'main';
+  document.getElementById('signupView').hidden = name !== 'signup';
+  document.getElementById('suMsg').textContent = '';
+}
+
+async function signup() {
+  const msg = document.getElementById('suMsg');
+  const pw = document.getElementById('suPw').value;
+  if (pw !== document.getElementById('suPw2').value) {
+    msg.className = 'err'; msg.textContent = '비밀번호와 비밀번호 확인이 다릅니다.'; return;
+  }
+  const join = v('suJoin');
+  const r = await call('POST', '/api/auth/signup', { email: v('suEmail'), password: pw, join_company_id: join || null });
+  if (r.status === 201) {
+    msg.className = 'msg';
+    msg.textContent = '가입되었습니다.' + (join ? ' 업체 합류는 소유자 승인 후 사용할 수 있습니다.' : '');
+    ['suEmail', 'suPw', 'suPw2', 'suBrn'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('suJoin').innerHTML = '<option value="">합류 안 함</option>';
+    await refreshMe();  // 가입하면 바로 로그인된다
+  } else {
+    msg.className = 'err'; msg.textContent = (r.data && r.data.error) || '가입하지 못했습니다.';
+  }
+}
+
+async function findCompany() {  // 가입 화면: 사업자등록번호로 합류할 업체 찾기
+  const r = await call('GET', '/api/companies/lookup?brn=' + encodeURIComponent(v('suBrn')));
+  const sel = document.getElementById('suJoin');
+  const list = (r.data && r.data.companies) || [];
+  sel.innerHTML = '<option value="">합류 안 함</option>' + list.map(c =>
+    `<option value="${esc(c.company_id)}">${esc(c.company_name)} (${esc(c.area_limit_name)} ${esc(c.region_name)})</option>`).join('');
+  if (list.length) sel.value = list[0].company_id;
+  else if (r.status === 200) alert('이 사업자등록번호로 등록된 업체가 없습니다. 가입 후 새 업체를 등록하세요.');
+}
+
+async function showMembers() {  // 소유자: 합류 요청 승인·거절
+  const id = v('cid');
+  if (!id) { alert('업체 ID가 비어 있습니다.'); return; }
+  const r = await call('GET', `/api/companies/${id}/members`);
+  const box = document.getElementById('members');
+  if (r.status !== 200) { box.innerHTML = '<p class="err">업체 소유자만 볼 수 있습니다.</p>'; return; }
+  const label = {ACTIVE: '소속', PENDING: '승인 대기', REJECTED: '거절됨'};
+  box.innerHTML = '<table>' + r.data.members.map(m => `<tr><td>${esc(m.email)}</td><td>${m.role === 'OWNER' ? '소유자' : '구성원'}</td>` +
+    `<td>${label[m.membership_status] || m.membership_status}</td><td>` +
+    (m.role === 'OWNER' ? '' : `<button onclick="setMember('${m.user_id}','ACTIVE')">승인</button>` +
+                                 `<button onclick="setMember('${m.user_id}','REJECTED')">거절</button>`) + '</td></tr>').join('') + '</table>';
+}
+
+async function setMember(uid, status) {
+  await call('PUT', `/api/companies/${v('cid')}/members/${uid}`, { status });
+  await showMembers();
+}
+
+async function refreshMe() {
+  const res = await fetch('/api/auth/me');
+  const { user } = await res.json();
+  document.getElementById('me').textContent = user ? `${user.email}${user.is_admin ? ' (관리자)' : ''}` : '';
+  document.getElementById('meLine').hidden = !user;      // 로그인했을 때만 로그인 상태 표시
+  document.getElementById('loginBox').hidden = !!user;   // 로그인하면 로그인 칸은 숨김
+  document.getElementById('cid').value = '';
+  if (user) {  // 새로 고침해도 내 업체 ID 를 다시 채운다 (비어 있으면 업체 조회·수정이 안 됨)
+    const d = await (await fetch('/api/companies')).json();
+    const list = d.companies || [];
+    if (list.length) document.getElementById('cid').value = list[0].company_id;
+    const label = {PENDING: '승인 대기', REJECTED: '거절됨'};
+    document.getElementById('joinInfo').textContent = (d.join_requests || [])
+      .map(j => `합류 요청: ${j.company_name} — ${label[j.membership_status] || j.membership_status}`).join(' / ');
+  }
+}
+
+async function myCompanies() {
+  const r = await call('GET', '/api/companies');
+  const list = (r.data && r.data.companies) || [];
+  if (list.length && !v('cid')) document.getElementById('cid').value = list[0].company_id;
+}
+
+function withCid(fn) {
+  const id = v('cid');
+  if (!id) { alert('업체 ID가 비어 있습니다. 업체를 등록하거나 [내 업체 목록]을 누르세요.'); return; }
+  return fn(id);
+}
+
+async function auth(action) {
+  await call('POST', '/api/auth/' + action, { email: v('email'), password: document.getElementById('password').value });
+  refreshMe();
+}
+
+let juso = null;  // 주소 검색 팝업에서 고른 주소 (시도·시군구)
+async function jusoCallBack(d) {  // /dev/juso-popup 이 행안부 결과를 받아 부른다
+  juso = { siNm: d.siNm, sggNm: d.sggNm };
+  document.getElementById('caddr').value = d.roadAddrPart1 || d.roadFullAddr || '';
+  if (d.addrDetail) document.getElementById('caddr').value += ', ' + d.addrDetail;
+  const r = await call('GET', `/api/reference/region-match?si=${encodeURIComponent(d.siNm || '')}&sgg=${encodeURIComponent(d.sggNm || '')}`);
+  const g = regions.find(x => x.area_limit === r.data.area_limit);
+  const dist = g && g.districts.find(x => x.region_code === r.data.sub_area_code);
+  document.getElementById('jusoInfo').textContent = r.data.matched
+    ? `SRM 지역: ${g.area_limit_name} ${dist ? dist.region_name : ''} (주소에서 자동)`
+    : `SRM 지역 기준정보에 없는 시군구입니다: ${d.siNm} ${d.sggNm || ''} — 등록할 수 없음`;
+}
+
+async function createCompany() {
+  const r = await call('POST', '/api/companies', { company_name: v('cname'), head_office_address: v('caddr'),
+    business_registration_no: v('cbrn') || null, licenses: [], qualifications: [], juso });
+  if (r.data && r.data.company_id) document.getElementById('cid').value = r.data.company_id;
+}
+
+// ---------------------------------------------------------------- 점수 입력칸
+// 배점·산식(/evaluation)의 항목마다 입력 종류에 맞는 칸을 만든다. 비워 둔 칸은 보내지 않는다(= 미산정).
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]));
+const CREDIT = ['AAA','AA+','AA0','AA-','A+','A0','A-','BBB+','BBB0','BBB-','BB+','BB0','BB-','B+','B0','B-','CCC+','CCC','CCC-','CC','C','D'];
+const fmt = n => n == null ? '' : Number(n).toLocaleString('ko-KR', { maximumFractionDigits: 4 });
+
+function rowsHint(rows) {  // 구간표 요약: '5년이상 4.8 · 4년이상 5년미만 4.32 …'
+  return (rows || []).map(r => `${r.label || r.grade || r.level || ''} ${r.score ?? ''}`.trim()).join(' · ');
+}
+
+function select(key, options, kind) {  // options: [[값, 글자]]
+  return `<select data-key="${key}" data-kind="${kind}"><option value="">(미입력)</option>` +
+    options.map(([val, label]) => `<option value="${esc(val)}">${esc(label)}</option>`).join('') + '</select>';
+}
+function number(key, unit, kind = 'num') {
+  return `<input type="number" step="any" data-key="${key}" data-kind="${kind}" style="width:140px"> ${esc(unit || '')}`;
+}
+
+function field(n) {  // 항목 1개 → [입력 HTML, 설명]
+  const p = n.parameters || {}, k = n.key, ik = n.input_key;
+  if (n.rule_type === 'FORMULA' && ik === 'bid_price')
+    return [`입찰가격 ${number('bid_price', '원')}<br>예정가격 ${number('planned_price', '원')}`,
+            `산식 ${n.formula || ''}`];
+  if (ik === 'pq_score') return [number(k, '점 (0~100)'), p['입력'] || ''];
+  if (ik === 'performance_amount' || ik === 'same_kind_amount')
+    return [number(k, '원'), `기준금액 ${fmt(p.base_amount)}원 (${p.base_amount_source || ''}) · ${n.formula || ''}`];
+  if (ik === 'engineer_days') return [number(k, '일'), n.formula || ''];
+  if (ik === 'bonus_count') return [number(k, '건'), `건당 ${p.per_unit}점, 최대 ${p.limit}점`];
+  if (n.rule_type === 'FORMULA' && 'per_unit' in p) return [number(k, '명'), `1명당 ${p.per_unit}점, 최대 ${p.cap}점`];
+  if (ik === 'office_location')
+    return [select(k, [...(p.rows || []).map(r => [r.level, `${r.level} (${r.score}점)`]), ['광역 밖', `광역 밖 (${p.outside_region_score || 0}점)`]], 'str'),
+            `해당 사업소: ${p.office || ''}`];
+  if (ik === 'credit_grade')
+    return [select(k, [...CREDIT.map(g => [g, g]), ['없음', '유효한 등급 없음']], 'str'), rowsHint((p.rows || []).map(r => ({label: r['회사채'], score: r.score})))];
+  if (['debt_ratio', 'current_ratio', 'equity_ratio', 'business_years', 'similar_amount'].includes(ik)) {
+    const unit = ik === 'similar_amount' ? '원' : ik === 'business_years' ? '년' : '%';
+    const basis = p.basis ? ` · 기준 ${fmt(p.basis)}${ik === 'similar_amount' ? '원' : '%'} 대비 배수로 구간 판정` : '';
+    return [number(k, unit), (p['입력'] || '') + basis + ' · ' + rowsHint(p.rows)];
+  }
+  if ((ik === 'pq_grade' || ik === 'bonus_grade') && p.input_type === 'select') {
+    const opts = (p.rows || []).map((r, i) => [i, `${r.grade} (${r.score}점)`]);
+    if (ik === 'bonus_grade') opts.push(['none', '해당 없음 (0점)']);
+    return [select(k, opts, 'index'), p.condition || p['참고'] || ''];
+  }
+  if ((ik === 'pq_grade' || ik === 'bonus_grade') && p.input_type === 'check')
+    return [select(k, [['true', `해당 (${p.rows[0].score}점)`], ['false', '해당 없음 (0점)']], 'bool'), (p.rows[0] || {}).grade || ''];
+  if (ik === 'pq_grade' || ik === 'bonus_grade')
+    return [number(k, p.unit || ''), (p['입력'] || p.condition || '') + ' · ' + rowsHint(p.rows)];
+  if (n.rule_type === 'FIXED' && p.items)
+    return [p.items.map(i => `<label><input type="checkbox" data-key="${k}" data-kind="list" value="${esc(i.name)}"> ${esc(i.name)} (${i.score}점)</label>`).join('<br>'), '보유한 장비 체크'];
+  if (n.rule_type === 'FIXED')
+    return [select(k, [['true', `해당 (${p.score ?? n.max_score}점)`], ['false', '해당 없음 (0점)']], 'bool'), p.condition || ''];
+  if (n.rule_type === 'GROUP')
+    return [number(k, '점'), `세부 규칙 없음 → 점수 직접 입력 (${p.min ?? 0} ~ ${p.max ?? n.max_score}점)`];
+  return ['', `계산 방법 미지원 (${n.rule_type}/${ik})`];
+}
+
+function formRows(nodes, depth) {
+  let html = '';
+  for (const n of nodes) {
+    if (n.rule_type === 'THRESHOLD') continue;
+    const pad = `padding-left:${depth * 18 + 6}px`;
+    const max = n.max_score != null ? ` (${n.max_score}점)` : '';
+    const review = n.verification_status === 'REVIEW' ? ' <span class="wait">[원문 확인 필요]</span>' : '';
+    if (n.children.length) {
+      let extra = '';
+      if ((n.parameters || {}).choose_one)
+        extra = ' ' + select('management_method', [['ratio', '재무비율로 평가'], ['credit', '신용평가등급으로 평가']], 'str');
+      html += `<tr class="grp"><td style="${pad}" colspan="3">${esc(n.name)}${max}${review}${extra}</td></tr>`;
+      html += formRows(n.children, depth + 1);
+    } else {
+      const [input, hint] = field(n);
+      html += `<tr><td style="${pad}">${esc(n.name)}${max}${review}</td><td>${input}</td><td class="hint">${esc(hint)}</td></tr>`;
+    }
+  }
+  return html;
+}
+
+// 배점·산식: 열고 닫기. 항목·배점·산식·구간 점수를 표로 보여 준다
+async function toggleRules() {
+  const box = document.getElementById('rules'), btn = document.getElementById('rulesBtn');
+  if (!box.hidden) { box.hidden = true; btn.textContent = '배점·산식 열기'; return; }
+  if (!v('notice2')) { alert('공고번호를 입력하세요.'); return; }
+  const r = await call('GET', '/api/notices/' + v('notice2') + '/evaluation');
+  if (!r.data || !r.data.rules || !r.data.rules.length) {
+    box.innerHTML = `<p>배점 없음: ${esc(r.data && (r.data.reason || r.data.error))}</p>`;
+  } else {
+    const line = (n, d) => {
+      const p = n.parameters || {};
+      const detail = n.formula || (p.rows ? rowsHint(p.rows) : '') || p['심사항목'] || p.condition
+        || (p.pass_score != null ? `${p.pass_score}점 이상` : '');
+      const review = n.verification_status === 'REVIEW' ? ' <span class="wait">[원문 확인 필요]</span>' : '';
+      return `<tr${n.children.length ? ' class="grp"' : ''}><td style="padding-left:${d * 18 + 6}px">${esc(n.name)}${review}</td>` +
+        `<td>${n.max_score ?? ''}</td><td class="hint">${esc(detail)}</td></tr>` + n.children.map(c => line(c, d + 1)).join('');
+    };
+    box.innerHTML = `<table><tr><th>항목</th><th>배점</th><th>산식·구간</th></tr>${r.data.rules.map(n => line(n, 0)).join('')}</table>`;
+  }
+  box.hidden = false; btn.textContent = '배점·산식 닫기';
+}
+
+async function buildForm() {
+  if (!v('notice2')) { alert('공고번호를 입력하세요.'); return; }
+  const r = await call('GET', '/api/notices/' + v('notice2') + '/evaluation');
+  const box = document.getElementById('form');
+  if (!r.data || !r.data.rules || !r.data.rules.length) {
+    box.innerHTML = `<p>배점 없음: ${esc(r.data && (r.data.reason || r.data.error))}</p>`;
+    return;
+  }
+  const pass = r.data.summary && r.data.summary.pass_score;
+  box.innerHTML = `<p>통과점수 ${pass ?? '?'}점. 비워 둔 칸은 0점이 아니라 미산정으로 계산됩니다.</p>` +
+    `<table>${formRows(r.data.rules, 0)}</table>`;
+  document.getElementById('result').innerHTML = '';
+}
+
+function collectInputs() {
+  const inputs = {};
+  for (const el of document.querySelectorAll('#form [data-key]')) {
+    const key = el.dataset.key, kind = el.dataset.kind;
+    if (kind === 'list') {
+      inputs[key] = inputs[key] || [];
+      if (el.checked) inputs[key].push(el.value);
+      continue;
+    }
+    if (el.value === '') continue;
+    inputs[key] = kind === 'num' ? Number(el.value) : kind === 'bool' ? el.value === 'true'
+      : kind === 'index' ? (el.value === 'none' ? null : Number(el.value)) : el.value;
+  }
+  return inputs;
+}
+
+function fillForm(inputs) {  // 저장한 입력값을 칸에 다시 채운다
+  for (const el of document.querySelectorAll('#form [data-key]')) {
+    const val = inputs[el.dataset.key];
+    if (val === undefined) continue;
+    if (el.dataset.kind === 'list') el.checked = (val || []).includes(el.value);
+    else el.value = val === null ? 'none' : String(val);
+  }
+}
+
+function resultRows(items, depth) {
+  return items.map(it => {
+    const cls = it.status === '산정' ? 'ok' : 'wait';
+    return `<tr${it.children.length ? ' class="grp"' : ''}><td style="padding-left:${depth * 18 + 6}px">${esc(it.name)}</td>` +
+      `<td>${it.score ?? '-'}</td><td>${it.max_score ?? ''}</td><td class="${cls}">${esc(it.status)}</td><td class="hint">${esc(it.note || '')}</td></tr>` +
+      resultRows(it.children, depth + 1);
+  }).join('');
+}
+
+async function score(save) {
+  if (!document.querySelector('#form table')) { alert('먼저 [점수 입력칸 만들기]를 누르세요.'); return; }
+  const inputs = collectInputs();
+  const r = save
+    ? await withCid(id => call('PUT', `/api/companies/${id}/evaluation-drafts/${v('notice2')}`, { inputs }))
+    : await call('POST', `/api/notices/${v('notice2')}/score`, { inputs });
+  if (!r || !r.data || !r.data.items) return;
+  const d = r.data;
+  const head = d.total == null
+    ? `합계: 미확정 (미산정·보류 ${(d.pending || []).length}개)`
+    : `합계 ${d.total}점 / 통과점수 ${d.pass_score ?? '?'}점` +
+      (d.passed === undefined ? '' : ` → ${d.passed ? '통과' : '미달'} (${d.gap > 0 ? '+' : ''}${d.gap}점)`);
+  document.getElementById('result').innerHTML = `<p><b>${esc(head)}</b></p>` +
+    `<table><tr><th>항목</th><th>점수</th><th>배점</th><th>상태</th><th>비고</th></tr>${resultRows(d.items, 0)}</table>`;
+}
+
+let regions = [];
+async function loadRegions() {
+  const res = await fetch('/api/reference/regions');
+  regions = (await res.json()).regions;  // 지역 이름 표시용
+}
+
+refreshMe();
+loadRegions();
+document.getElementById('notice2').addEventListener('change', () => {  // 공고를 바꾸면 이전 공고의 표를 닫는다
+  document.getElementById('rules').hidden = true;
+  document.getElementById('rulesBtn').textContent = '배점·산식 열기';
+  document.getElementById('form').innerHTML = '';
+  document.getElementById('result').innerHTML = '';
+});
+</script>
+</body>
+</html>

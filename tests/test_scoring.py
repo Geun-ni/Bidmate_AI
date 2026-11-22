@@ -104,3 +104,80 @@ class ScoringTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+@unittest.skipUnless(DEFAULT_DB_PATH.exists(), "수집 DB 없음")
+class PqScoringTest(unittest.TestCase):
+    """감리 PQ 세부 표(E012608054, 1억원 이상 고시금액 미만 구간)·기술용역 사업수행능력 환산(E012606818, 50점).
+    DB 사본에서 두 공고만 다시 추출해 계산한다. 값은 기준서 [별표 12] 와 대조."""
+
+    @classmethod
+    def setUpClass(cls):
+        import shutil, sqlite3, tempfile
+        from pathlib import Path
+        from backend.db.extract_evaluation_rules import refresh_notice
+        cls.tmp = tempfile.mkdtemp()
+        path = Path(cls.tmp) / "t.sqlite3"
+        shutil.copy(DEFAULT_DB_PATH, path)
+        db = sqlite3.connect(path)
+        for no in ("E012608054", "E012606818"):
+            refresh_notice(db, no)
+        db.commit()
+        db.close()
+        cls.db = notices_api.connect(path)
+
+    @classmethod
+    def tearDownClass(cls):
+        import shutil
+        cls.db.close()
+        shutil.rmtree(cls.tmp, ignore_errors=True)
+
+    def key(self, notice, name):
+        return str(self.db.execute("SELECT position FROM evaluation_rule WHERE notice_no=? AND item_name=?",
+                                   (notice, name)).fetchone()[0])
+
+    def find(self, items, name):
+        for it in items:
+            if it["name"] == name:
+                return it
+            got = self.find(it["children"], name)
+            if got:
+                return got
+        return None
+
+    def test_gamri_pq_tables(self):
+        k = lambda n: self.key("E012608054", n)
+        inputs = {k("상주감리원 전기분야 경력"): 6, k("상주감리원 참여분야 경력"): 4.5,
+                  k("상주감리원 참여분야 경력(공사감독·공사감리)"): 3, k("비상주감리원 등급"): 1,  # 고급감리원
+                  k("비상주감리원 참여분야 경력"): 2,
+                  k("감리업체 실적"): 0.9 * 176_230_378,                     # 사정금액의 90% → 5.4
+                  k("자본비율"): 43.14, k("유동비율"): 100,                    # 평균 대비 1.0배 → 2.0, 0.79배 → 3.4
+                  k("상주감리원 중복배치 없음"): True, k("비상주감리원 중복배치"): 6}
+        items = scoring.calculate(self.db, "E012608054", inputs)["items"]
+        self.assertAlmostEqual(self.find(items, "참여감리원")["score"], 4.8 + 4.32 + 1.92 + 0.78 + 1.42)
+        self.assertAlmostEqual(self.find(items, "유사용역수행실적")["score"], 5.4)
+        self.assertAlmostEqual(self.find(items, "신용도")["score"], 2.0 + 3.4)
+        self.assertAlmostEqual(self.find(items, "업무중첩도")["score"], 1.8 + 0.9)
+
+    def test_pq_score_conversion(self):
+        k = self.key("E012606818", "사업수행능력")
+        items = scoring.calculate(self.db, "E012606818", {k: 87.555})["items"]
+        self.assertEqual(self.find(items, "사업수행능력")["score"], 43.78)  # 87.555/100×50 = 43.7775 → 셋째자리 반올림
+        items = scoring.calculate(self.db, "E012606818", {})["items"]
+        self.assertEqual(self.find(items, "사업수행능력")["status"], scoring.UNCALC)
+
+
+class DirectInputTest(unittest.TestCase):
+    """세부 규칙 없는 묶음(직접 입력): 감점 항목은 0 ~ 감점 한도 사이로 자른다"""
+
+    def node(self, max_score):
+        return {"key": "1", "name": "부정당업체 영업정지", "category": "BONUS", "max_score": max_score,
+                "rule_type": "GROUP", "input_key": None, "parameters": {}, "children": [],
+                "verification_status": "UNVERIFIED", "rounding": None}
+
+    def test_penalty_range(self):
+        leaf = lambda mx, v: scoring._leaf(self.node(mx), {"1": v}, {})["score"]
+        self.assertEqual(leaf(-1.4, 0), 0)        # 해당 없음 → 0 (예전에는 -1.4 로 잘림)
+        self.assertEqual(leaf(-1.4, -0.3), -0.3)
+        self.assertEqual(leaf(-1.4, -5), -1.4)    # 한도 넘으면 한도
+        self.assertEqual(leaf(0.4, 1), 0.4)       # 가점은 0 ~ 한도

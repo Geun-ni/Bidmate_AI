@@ -41,7 +41,9 @@ def events_for(db, notice_no):
     for (text,) in db.execute("""SELECT c.text FROM bid_attachment a JOIN bid_document_content c ON c.attachment_id=a.id
                                  WHERE a.notice_no=? AND a.doc_kind='CRITERIA' AND c.read_status='SUCCESS'""",
                               (notice_no,)):
-        m = DOC_DUE.search(text or "")
+        # '통보 받은 날부터 30일' 같은 부실벌점 이의신청·서류 보완 문장도 모양이 같아서, 적격심사 서류 문장만 쓴다
+        flat = re.sub(r"\s*\n\s*", " ", text or "")  # 문장 중간 줄바꿈('접수일로부터\n5일 이상')
+        m = next((x for x in DOC_DUE.finditer(flat) if "적격심사" in x.group(0)), None)
         if m:
             out.append(("QUALIFICATION_DOC_DUE", None, "DOCUMENT", 0, re.sub(r"\s+", " ", m.group(0)).strip()[:300]))
             break
@@ -57,19 +59,22 @@ def refresh(db, notice_no):
     return len(events)
 
 
-def list_events(db, date_from=None, date_to=None, notice_no=None):
-    """달력용: 기간(YYYY-MM-DD) 안 일정 + 날짜 없는 제출기한(공고를 지정한 경우)"""
+def list_events(db, date_from=None, date_to=None, notice_no=None, user_id=None):
+    """달력용: 기간(YYYY-MM-DD) 안 일정 + 날짜 없는 제출기한(공고를 지정했거나 내 관심공고만 볼 때)"""
     where, params = ["1=1"], []
     if notice_no:
         where.append("e.notice_no=?")
         params.append(notice_no)
+    if user_id:  # 내 관심공고만 (FUNC-016)
+        where.append("e.notice_no IN (SELECT notice_no FROM favorite_notice WHERE user_id=?)")
+        params.append(user_id)
     if date_from:
         where.append("(e.event_at IS NULL OR e.event_at >= ?)")
         params.append(date_from)
     if date_to:
         where.append("(e.event_at IS NULL OR e.event_at < date(?, '+1 day'))")
         params.append(date_to)
-    if not notice_no:
+    if not notice_no and not user_id:
         where.append("e.event_at IS NOT NULL")
     rows = db.execute(f"""SELECT e.notice_no, n.title, e.event_type, e.event_at, e.source, e.confirmed, e.note
                           FROM notice_schedule_event e JOIN bid_notice n ON n.notice_no = e.notice_no

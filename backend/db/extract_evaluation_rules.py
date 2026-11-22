@@ -5,7 +5,7 @@
   - 입찰가격 배점과 평가산식 (PRICE / FORMULA): 기준율·계수·A값 차감·반올림·최저평점·상한 구간
   - 수행능력 묶음과 그 아래 분야별 배점 (GROUP), 가감점 범위, 기술자 미달 등 결격 감점 (FIXED)
 2단계: 1단계 행 아래 세부 표 — 경영상태 구간표·기준치·신용등급표, 시공경험 산식·사정액, 사업소 숙지도,
-  신인도·가감점 등급표. 세부 표를 못 읽으면 그 행만 REVIEW (detail_issues).
+  신인도·가감점 등급표, 감리 PQ 세부평가기준(참여감리원·유사용역·신용도·업무중첩도), 기술용역 사업수행능력 환산 산식. 세부 표를 못 읽으면 그 행만 REVIEW (detail_issues).
 
 - 금액 구간이 여러 개면 bid_notice.presumed_price(추정가격) 가 들어가는 구간의 표를 쓴다.
   '전기·정보통신·소방공사 등은 …' 처럼 괄호 안 별도 구간이 있으면 전기공사 공고는 그 구간을 쓴다.
@@ -1196,6 +1196,240 @@ def is_special(db, notice_no, title):
     return any(t in names for t in SPECIAL_TRADES) or any(t in (title or "") for t in ("전기공사",))
 
 
+# ------------------------------------------------------------------ 2단계: 감리 PQ 세부 표 ([별표 12] 고시금액 미만)
+# 표 안 칸이 ' / ' 로 이어진 한 줄로 읽힌다: '용역금액 / 5년이상 / 5년미만 / 4년이상 / … / 1억원이상 / 고시금액미만 / 4.80점 / …'
+# 용역금액 구간(4천만원 미만 / 4천만원~1억원 / 1억원~고시금액)마다 점수가 한 줄씩 있다.
+PQ_BANDS = (("4천만원 미만", r"4천만원\s*미만"), ("4천만원 이상 1억원 미만", r"4천만원\s*이상\s*(?:/\s*)?1억원\s*미만"),
+            ("1억원 이상 고시금액 미만", r"1억원\s*이상\s*(?:/\s*)?고시금액\s*미만"))
+PQ_NUM = r"(\d+(?:\.\d+)?)"
+PQ_SCORE_RE = re.compile(r"평점\s*=\s*\(\s*평가점수\s*/\s*100\s*\)\s*×\s*(\d+(?:\.\d+)?)\s*점")
+
+
+def pq_band(price):
+    """추정가격 → PQ_BANDS 번호 (없으면 None)"""
+    if price is None:
+        return None
+    return 0 if price < 40_000_000 else 1 if price < 100_000_000 else 2
+
+
+def _band_marks(seg):
+    return sorted((m.start(), m.end(), i) for i, (_, pat) in enumerate(PQ_BANDS) for m in re.finditer(pat, seg))
+
+
+def pq_band_scores(seg, band, k):
+    """seg 안에서 band 구간 이름 뒤 숫자 k개 (구간 이름 순서가 표마다 달라 이름으로 찾는다)"""
+    marks = _band_marks(seg)
+    for n, (s, e, i) in enumerate(marks):
+        if i == band:
+            nxt = marks[n + 1][0] if n + 1 < len(marks) else len(seg)
+            nums = [float(x) for x in re.findall(PQ_NUM, seg[e:nxt])][:k]
+            return nums if len(nums) == k else None
+    return None
+
+
+def pq_bins(header, unit):
+    """['5년이상','5년미만','4년이상',…,'2년미만'] → 구간 행 (단위가 % 면 배수로: 75% → 0.75)"""
+    vals = []
+    for t in header:
+        m = re.fullmatch(rf"{PQ_NUM}{unit}(이상|미만)", t.replace(" ", ""))
+        if not m:
+            return None
+        vals.append((float(m.group(1)) / (100 if unit == "%" else 1), m.group(2)))
+    mid = vals[1:-1]
+    if len(vals) < 2 or vals[0][1] != "이상" or vals[-1][1] != "미만" or len(mid) % 2:
+        return None
+    rows = [{"min": vals[0][0], "min_inc": True, "max": None, "max_inc": None, "label": header[0]}]
+    for j in range(0, len(mid), 2):
+        (hi, a), (lo, b) = mid[j], mid[j + 1]
+        if (a, b) != ("미만", "이상"):
+            return None
+        rows.append({"min": lo, "min_inc": True, "max": hi, "max_inc": False,
+                     "label": f"{header[j + 2]} {header[j + 1]}"})
+    rows.append({"min": None, "min_inc": None, "max": vals[-1][0], "max_inc": False, "label": header[-1]})
+    return rows
+
+
+def pq_amount_table(seg, band, unit):
+    """'용역금액 / 5년이상 / … / 1억원이상 / 고시금액미만 / 4.80점 / …' → 구간 행(점수 포함) 또는 None"""
+    i = seg.find("용역금액 /")
+    if i < 0:
+        return None
+    rest = seg[i + len("용역금액 /"):]
+    marks = _band_marks(rest)
+    if not marks:
+        return None
+    header = [t.strip() for t in rest[:marks[0][0]].split(" / ") if t.strip()]
+    rows = pq_bins(header, unit)
+    scores = pq_band_scores(rest, band, len(rows)) if rows else None
+    if not scores:
+        return None
+    for r, sc in zip(rows, scores):
+        r["score"] = sc
+    return rows
+
+
+def pq_details(text, price, srm_amount=None):
+    """감리 PQ 세부평가기준 → ({'참여감리원': [항목…], '유사용역수행실적': […], '신용도': […], '업무중첩도': […]}, 문제 목록).
+    항목 = dict(name, rule_type, max, input_key, parameters, quote). 점수는 추정가격이 들어가는 용역금액 구간 값."""
+    band = pq_band(price)
+    if band is None:
+        return {}, ["감리 PQ: 추정가격 없음"]
+    head = re.search(r"\[별표\s*\d+\]\s*\n[^\n]*사업수행능력\s*세부평가기준[^\n]*", text)
+    if not head:
+        return {}, ["감리 PQ 세부평가기준 표 못 찾음"]
+    end = re.search(r"\n\[(?:부표|별표)\s*\d", text[head.end():])
+    sec = text[head.end(): head.end() + end.start()] if end else text[head.end():]
+    out, issues = {}, []
+    bname = PQ_BANDS[band][0]
+
+    def table_item(name, seg, unit, input_label, quote):
+        rows = pq_amount_table(seg, band, unit)
+        if not rows:
+            issues.append(f"감리 PQ '{name}' 표 못 읽음")
+            return None
+        return {"name": name, "rule_type": "TABLE", "max": max(r["score"] for r in rows), "input_key": "pq_grade",
+                "parameters": {"rows": rows, "input_type": "count", "unit": unit, "입력": input_label,
+                               "용역금액 구간": bname}, "quote": quote[:300]}
+
+    # 가. 참여감리원 — 상주(전기분야 경력, 참여분야 경력 2개 표), 비상주(등급, 참여분야 경력)
+    s1, s2, s3 = sec.find("(1)상주"), sec.find("(2)비상주"), sec.find("나. / 유")
+    people = []
+    if s1 >= 0:
+        resident = sec[s1: s2 if s2 > s1 else s3 if s3 > s1 else len(sec)]
+        for m in re.finditer(r"용역금액 /", resident):
+            p = m.start()
+            line_start = resident.rfind("\n", 0, p) + 1
+            before = resident[line_start:p]
+            name = ("상주감리원 참여분야 경력" if "공사설계" in before else
+                    "상주감리원 참여분야 경력(공사감독·공사감리)" if "공사감독" in before else
+                    "상주감리원 전기분야 경력")
+            it = table_item(name, resident[p:].split("\n")[0], "년", "경력 년수 (년 미만 절사)",
+                            resident[line_start:p + 120])
+            if it:
+                it["parameters"]["참고"] = "상주감리원이 2인 이상이면 개인별 점수 평균 (소수점 셋째자리 반올림)"
+                people.append(it)
+    if s2 >= 0:
+        nonres = sec[s2: s3 if s3 > s2 else len(sec)]
+        m = re.search(rf"{PQ_BANDS[band][1]}\s*:\s*특급감리원\s*:?\s*{PQ_NUM}\s*점\s*,\s*고급감리원\s*:?\s*{PQ_NUM}\s*점",
+                      nonres)
+        grade = [float(m.group(1)), float(m.group(2))] if m else None
+        t = nonres.find("용역금액 / 특급감리원 / 고급감리원")  # 같은 내용을 표로 쓴 양식
+        if grade is None and t >= 0:
+            grade = pq_band_scores(nonres[t:].split("\n")[0], band, 2)
+        if grade:
+            rows = [{"grade": "특급감리원", "score": grade[0]}, {"grade": "고급감리원", "score": grade[1]}]
+            people.append({"name": "비상주감리원 등급", "rule_type": "TABLE", "max": rows[0]["score"],
+                           "input_key": "pq_grade",
+                           "parameters": {"rows": rows, "input_type": "select", "unit": None, "용역금액 구간": bname,
+                                          "참고": "고급감리원 미만으로 배치하면 실격"},
+                           "quote": nonres[:300]})
+        else:
+            issues.append("감리 PQ '비상주감리원 등급' 점수 못 읽음")
+        p = nonres.find("용역금액 /", max(0, nonres.find("참여")))
+        if p >= 0:
+            it = table_item("비상주감리원 참여분야 경력", nonres[p:].split("\n")[0], "년",
+                            "직무기간 년수 (비상주 기간의 20% 인정, 년 미만 절사)", nonres[max(0, p - 150):p + 150])
+            if it:
+                people.append(it)
+    out["참여감리원"] = people
+
+    # 나. 유사용역수행실적 — 최근 3년 실적 합계 ÷ 사정금액 구간 (열 순서: 4천만원 미만 → 1억원~고시금액)
+    sim = sec[s3:] if s3 >= 0 else ""
+    rows = []
+    for m in re.finditer(rf"사정금액\s*대비\s*{PQ_NUM}%\s*(이상|미만)(?:\s*{PQ_NUM}%\s*미만)?"
+                         rf"\s*/\s*{PQ_NUM}\s*점\s*/\s*{PQ_NUM}\s*점\s*/\s*{PQ_NUM}\s*점", sim):
+        a, kind, b = float(m.group(1)) / 100, m.group(2), m.group(3)
+        if kind == "이상":
+            row = {"min": a, "min_inc": True, "max": float(b) / 100 if b else None, "max_inc": False if b else None}
+        else:
+            row = {"min": None, "min_inc": None, "max": a, "max_inc": False}
+        rows.append({**row, "label": re.sub(r"\s+", " ", m.group(0).split(" / ")[0]),
+                     "score": float(m.group(4 + band))})
+    header = sim[:sim.find("사정금액 대비")] if "사정금액 대비" in sim else ""
+    order = [i for _, _, i in _band_marks(header)]
+    base = re.search(r"사정금액\s*\(VAT\s*포함\)\s*[：:]\s*￦?\s*([\d,]+)", sim)
+    if rows and order == [0, 1, 2]:
+        basis = int(base.group(1).replace(",", "")) if base else srm_amount  # 기준서 칸이 비어 있으면 SRM 사정액
+        if base and srm_amount and basis != srm_amount:
+            issues.append(f"감리 PQ 유사용역: 기준서 사정금액 {basis:,} ≠ SRM 사정액 {srm_amount:,}")
+        out["유사용역수행실적"] = [{
+            "name": "감리업체 실적", "rule_type": "TABLE", "max": max(r["score"] for r in rows),
+            "input_key": "similar_amount",
+            "parameters": {"rows": rows, "value_unit": "기준치 배수",
+                           "basis": basis, "basis_name": "사정금액(VAT 포함)",
+                           "basis_source": "기준서" if base else "SRM 사정액", "입력": "최근 3년 유사용역 실적 합계(원)", "용역금액 구간": bname},
+            "quote": sim[sim.find("감리업체실적"):][:300]}]
+        if not basis:
+            issues.append("감리 PQ 유사용역: 사정금액 못 찾음")
+    else:
+        issues.append("감리 PQ '유사용역수행실적' 표 못 읽음")
+
+    # 다. 신용도 — 업체 자본비율·유동비율 ÷ 업종 평균 비율 구간
+    credit = []
+    for name, key, start, avg_re in (("자본비율", "equity_ratio", "(1)자본비율", r"평균\s*자기자본비율\s*:\s*([\d.]+)\s*%"),
+                                     ("유동비율", "current_ratio", "(2) 유동비율", r"평균\s*유동비율\s*:\s*([\d.]+)\s*%")):
+        s = sec.find(start)
+        seg = sec[s:].split("\n")[0] if s >= 0 else ""
+        if name == "자본비율" and "(2) 유동비율" in seg:
+            seg = seg[:seg.find("(2) 유동비율")]
+        rows = pq_amount_table(seg, band, "%")
+        if not rows:
+            issues.append(f"감리 PQ '{name}' 표 못 읽음")
+            continue
+        avg = re.search(avg_re, seg)
+        if not avg:
+            issues.append(f"감리 PQ '{name}' 업종 평균 비율 못 찾음")
+        credit.append({"name": name, "rule_type": "TABLE", "max": max(r["score"] for r in rows), "input_key": key,
+                       "parameters": {"rows": rows, "value_unit": "기준치 배수",
+                                      "basis": float(avg.group(1)) if avg else None, "입력": f"업체 {name}(%)",
+                                      "용역금액 구간": bname, "참고": "관련서류를 제출하지 않으면 최저점수"},
+                       "quote": seg[:300]})
+    out["신용도"] = credit
+
+    # 라. 업무중첩도 — 상주(중복 배치면 실격 → 아니면 책임+보조 합계), 비상주(다른 현장 비상주 중복 개소 수)
+    over = []
+    s = sec.find("라. / 업")
+    seg = sec[s:] if s >= 0 else ""
+    r_start = seg.find("책임감리원 / 보조감리원 / 합계")
+    if r_start >= 0:
+        nums = pq_band_scores(seg[r_start:].split("\n")[0], band, 3)
+        if nums and abs(nums[0] + nums[1] - nums[2]) < 1e-6:
+            over.append({"name": "상주감리원 중복배치 없음", "rule_type": "FIXED", "max": nums[2], "input_key": "pq_check",
+                         "parameters": {"score": nums[2], "condition": "상주감리원이 다른 공사현장에 중복 배치되지 않음 "
+                                        "(중복 배치면 실격)", "책임감리원": nums[0], "보조감리원": nums[1],
+                                        "용역금액 구간": bname},
+                         "quote": seg[max(0, r_start - 120): r_start + 180]})
+        else:
+            issues.append("감리 PQ '상주감리원 업무중첩도' 점수 못 읽음")
+    n_start = seg.find("6개소미만")
+    if n_start >= 0:
+        line = seg[n_start:].split("\n")[0]
+        marks = _band_marks(line)
+        header = [t.strip() for t in line[:marks[0][0]].split(" / ") if t.strip()] if marks else []
+        rows = []
+        for t in header:
+            m = re.fullmatch(rf"{PQ_NUM}개소(미만)?", t.replace(" ", ""))
+            if not m:
+                rows = []
+                break
+            v = float(m.group(1))
+            rows.append({"min": None, "min_inc": None, "max": v, "max_inc": False, "label": t} if m.group(2)
+                        else {"min": v, "min_inc": True, "max": v, "max_inc": True, "label": t})
+        scores = pq_band_scores(line, band, len(rows)) if rows else None
+        if scores:
+            for r, sc in zip(rows, scores):
+                r["score"] = sc
+            over.append({"name": "비상주감리원 중복배치", "rule_type": "TABLE", "max": max(scores), "input_key": "pq_grade",
+                         "parameters": {"rows": rows, "input_type": "count", "unit": "개소",
+                                        "입력": "다른 공사현장에 비상주감리원으로 배치된 개소 수", "용역금액 구간": bname,
+                                        "참고": "다른 공사현장의 상주감리원으로 중복 배치되면 실격"},
+                         "quote": seg[max(0, n_start - 150):n_start + 150]})
+        else:
+            issues.append("감리 PQ '비상주감리원 업무중첩도' 표 못 읽음")
+    out["업무중첩도"] = over
+    return out, issues
+
+
 def extract_notice(db, notice_no):
     notice = db.execute("SELECT title, presumed_price, item_type, notice_date FROM bid_notice WHERE notice_no=?",
                         (notice_no,)).fetchone()
@@ -1467,6 +1701,49 @@ def extract_notice(db, notice_no):
             add(parent=parent, category="BONUS", item_name=b["name"], rule_type="TABLE",
                 max_score=None, parameters=params, input_key="bonus_grade",
                 source_location="[별표 2] 신인도", source_quote=b["quote"])
+
+    # 3-5) 2단계 세부 표: 감리 PQ (참여감리원·유사용역수행실적·신용도·업무중첩도, [별표 12] 세부평가기준)
+    pq_rows = {r["item_name"]: i for i, r in enumerate(rows)
+               if r["rule_type"] == "GROUP" and r["item_name"] in ("참여감리원", "유사용역수행실적", "신용도", "업무중첩도")}
+    if pq_rows:
+        pq, issues = pq_details(text, price, amounts[0])
+        for name, gi in pq_rows.items():
+            got = pq.get(name) or []
+            limit = rows[gi]["max_score"]
+            filled = sum(it["max"] for it in got)
+            item_issues = [i for i in issues if f"'{name}'" in i or (name == "유사용역수행실적" and "유사용역" in i)]
+            if not got:
+                item_issues = item_issues or [f"감리 PQ '{name}' 세부 표 못 찾음"]
+            elif limit is not None and abs(filled - limit) > 1e-6:
+                item_issues.append(f"감리 PQ '{name}' 세부 배점 합계 {filled:g} ≠ {limit:g}")
+            result["detail_issues"] += item_issues
+            for it in got:
+                add(parent=gi, category=rows[gi]["category"], item_name=it["name"], rule_type=it["rule_type"],
+                    max_score=it["max"], parameters=it["parameters"], input_key=it["input_key"],
+                    verification_status="REVIEW" if item_issues else "UNVERIFIED",
+                    source_location=f"[별표] 감리 사업수행능력 세부평가기준 > {name}", source_quote=it["quote"])
+        result["detail_issues"] += [i for i in issues if not any(f"'{n}'" in i for n in pq_rows) and "유사용역" not in i]
+
+    # 3-6) 기술용역 사업수행능력: '평점 = (평가점수/100) × 70점, 소수점 셋째자리에서 반올림' → 환산 산식
+    #      평가점수(100점 만점) 세부 기준은 별도 '사업수행능력 세부평가기준' 문서라 업체가 평가점수를 입력한다
+    for r in rows:
+        detail = (r.get("parameters") or {}).get("심사항목") or ""
+        m = PQ_SCORE_RE.search(detail)
+        if r["item_name"] != "사업수행능력" or r["rule_type"] != "GROUP" or not m:
+            continue
+        points = float(m.group(1))
+        if r["max_score"] is not None and abs(r["max_score"] - points) > 1e-6:
+            result["detail_issues"].append(f"사업수행능력 환산 배점 {points:g} ≠ 배점표 {r['max_score']:g}")
+            r["verification_status"] = "REVIEW"
+        digits = 2 if re.search(r"소수점\s*셋째\s*자리에서\s*반올림", detail) else None
+        r.update(rule_type="FORMULA", max_score=r["max_score"] if r["max_score"] is not None else points,
+                 formula=f"평가점수/100 × {points:g}", formula_source="TEXT", input_key="pq_score",
+                 parameters={**r["parameters"], "points": points, "full": 100,
+                             "입력": "사업수행능력 평가점수(100점 만점, 재평가했으면 재평가 점수)"},
+                 rounding_digits=digits, rounding_mode="ROUND" if digits is not None else None)
+        if digits is None:
+            result["detail_issues"].append("사업수행능력 반올림 규칙 못 찾음")
+            r["verification_status"] = "REVIEW"
 
     # 4) 검산: 수행능력 묶음 합 + 입찰가격 = 100, 묶음 안 분야 합 = 묶음 한도
     total = next((i["score"] for i in items if i["kind"] == "TOTAL"), None)
