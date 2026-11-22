@@ -388,6 +388,13 @@ def collect_srm(db, srm, notice_no, found_kinds):
     return found_kinds
 
 
+def invalidate_edited_rules(db, notice_no):
+    """정정으로 첨부(기준서)가 바뀐 공고: LLM·사용자가 옛 기준서로 넣은 배점 행을 지운다.
+    지우지 않으면 파서가 이 공고를 '고친 공고'로 보고 건드리지 않아 옛 배점이 계속 쓰인다.
+    바로 뒤 refresh_evaluation_rules 가 새 기준서로 다시 뽑고, 못 뽑으면 rule_extracted=0 → 다시 LLM 대상. → 지운 행 수"""
+    return db.execute("DELETE FROM evaluation_rule WHERE notice_no=? AND updated_by <> 'PARSER'", (notice_no,)).rowcount
+
+
 def process_notice(db, srm, row):
     notice_no = row["no"]
     started = now()
@@ -413,6 +420,7 @@ def process_notice(db, srm, row):
         if old_version and attachment_version(db, notice_no) != old_version:
             db.execute("UPDATE notice_analysis_cache SET analysis_status='INVALIDATED', invalidated_at=? "
                        "WHERE notice_no=? AND analysis_status <> 'INVALIDATED'", (now(), notice_no))
+            invalidate_edited_rules(db, notice_no)
         db.execute("UPDATE bid_notice SET needs_recollect=0, recollect_reason=NULL, last_collected_at=? "
                    "WHERE notice_no=?", (now(), notice_no))
         db.commit()

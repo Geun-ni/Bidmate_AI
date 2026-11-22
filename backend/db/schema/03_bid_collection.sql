@@ -115,7 +115,11 @@ CREATE TABLE IF NOT EXISTS bid_document_content (
     equation_count   INTEGER,
     error            TEXT,
     read_at          TEXT NOT NULL,
-    parser_version   TEXT                               -- doc_reader.PARSER_VERSION (NULL = 전처리 전 v1)
+    parser_version   TEXT,                              -- doc_reader.PARSER_VERSION (NULL = 전처리 전 v1)
+    -- 적격심사기준(CRITERIA)에서 평가산식을 규칙 파서로 뽑았는지: 1 = 성공(evaluation_rule 에 행 있음),
+    -- 0 = 실패(PDF·zip·그림, 기준서·공고 불일치, 규칙으로 못 읽는 항목) → 배점 행은 비워 두고 LLM이 본문을 직접 읽는다.
+    -- NULL = 판단 대상 아님(공고문 등) 또는 아직 안 돌림. backend/db/extract_evaluation_rules.py 가 채운다
+    rule_extracted   INTEGER CHECK (rule_extracted IN (0, 1))
 );
 
 CREATE TABLE IF NOT EXISTS collect_run (

@@ -1111,8 +1111,19 @@ def method_table(lines, s, e):
         cap = sum(float(c) for c in caps) if caps else None
         if len(caps) > 1:
             per = None  # 업체·감리원 등 규칙이 여러 개 섞인 행 → 원문 확인
+        band_caps = None
+        if cap is None:  # '최대 N점' 문장이 없고 점수가 표 안에만 있는 항목 (부실벌점·자격보유)
+            cols = re.findall(r"(?:초과|이하|미만|이상)\s*/\s*(\d+(?:\.\d+)?)\s*/\s*(\d+(?:\.\d+)?)\s*/\s*(\d+(?:\.\d+)?)", text)
+            if cols and re.search(r"4천만원\s*미만", text):  # 용역금액 구간 3열 (4천만원 미만 → 1억원~고시금액)
+                band_caps = [max(float(c[i]) for c in cols) for i in range(3)]
+            elif not re.search(r"\d천만원\s*미만", text):  # 다른 금액 구간표(예: 3천만원)는 구간을 추측하지 않고 REVIEW 로 둔다
+                # 자격증별 점수 표 ('기술사 / 0.2점 / …'). '25점 초과'처럼 구간 경계에 붙은 숫자는 점수가 아님
+                pts = [float(x) for x in re.findall(r"(\d+(?:\.\d+)?)\s*점(?!\s*(?:초과|이하|미만|이상))", text)]
+                cap = max(pts) if pts else None
         rule = {"per_unit": float(per.group(1)) if per else None, "sign": -1 if minus else 1,
                 "설명": text[:300]}
+        if band_caps:
+            rule["band_caps"] = band_caps
         out.append({"group": "가점/감점", "name": name or "가점/감점", "condition": text[:300],
                     "rows": [{"grade": "최대", "score": (-cap if minus else cap) if cap is not None else 0.0}],
                     "rule": rule, "scale": None, "quote": raw[:300]})
@@ -1430,6 +1441,10 @@ def pq_details(text, price, srm_amount=None):
     return out, issues
 
 
+# 항목 하나만 못 읽은 문제 (나머지 배점 행은 믿을 수 있음 → 행을 남기고 그 행만 REVIEW)
+ITEM_ONLY_ISSUE = re.compile(r"계산 방법은 원문 확인 필요|기준비율 값이 문서에 없음")
+
+
 def extract_notice(db, notice_no):
     notice = db.execute("SELECT title, presumed_price, item_type, notice_date FROM bid_notice WHERE notice_no=?",
                         (notice_no,)).fetchone()
@@ -1457,6 +1472,7 @@ def extract_notice(db, notice_no):
     if not chosen:
         if not docs:
             result["issues"].append("읽은 적격심사기준 없음")
+        result["rule_extracted"] = False if docs else None  # 기준서가 아예 없으면 판단 대상 아님
         return result
     aid, sha, text, lines, table = chosen
     result["issues"] = []
@@ -1686,6 +1702,8 @@ def extract_notice(db, notice_no):
             if b.get("rule"):  # 감리: 건당·기간당 점수 + 최대 점수 (규칙 문장)
                 rule = b["rule"]
                 limit = b["rows"][0]["score"]
+                if not limit and rule.get("band_caps") and pq_band(price) is not None:  # 표 안 구간별 최대 점수
+                    limit = rule["sign"] * rule["band_caps"][pq_band(price)]
                 params = {"group": b["group"], "per_unit": rule["per_unit"], "sign": rule["sign"],
                           "limit": limit, "설명": rule["설명"]}
                 ok = rule["per_unit"] is not None and limit
@@ -1766,9 +1784,13 @@ def extract_notice(db, notice_no):
                 result["issues"].append(f"'{g['item_name']}' 하위 합계 {s:g} ≠ {g['max_score']:g}")
     if not groups:
         result["issues"].append("수행능력 묶음 못 찾음")
-    if result["issues"]:
-        for r in rows:
-            r["verification_status"] = "REVIEW"
+    # 규칙 추출 결과 표시 (팀 결정 2026-11-22). 문제가 하나라도 있으면 본문 rule_extracted=0 → LLM 대상.
+    #  - 항목 하나만 못 읽은 경우(계산 방법이 문장뿐, 기준비율 값 없음): 행은 남기고 그 행만 REVIEW → LLM은 REVIEW 행만 읽음
+    #  - 배점표·세부 표 자체를 못 믿는 경우(PDF·구간 불일치·합계 안 맞음·표 못 찾음): 배점 행을 비움 → LLM이 기준서 전체를 읽음
+    problems = result["issues"] + result["detail_issues"]
+    result["rule_extracted"] = not problems
+    if result["issues"] or any(not ITEM_ONLY_ISSUE.search(p) for p in result["detail_issues"]):
+        result["rows"] = []
     return result
 
 
@@ -1785,6 +1807,10 @@ def insert(db, results, now, only_these=False):
         db.execute(f"DELETE FROM evaluation_rule WHERE updated_by='PARSER' {keep}")
     n = 0
     for res in results:
+        if res.get("rule_extracted") is not None:  # 기준서 본문에 규칙 추출 성공(1)·실패(0) 표시
+            db.execute("""UPDATE bid_document_content SET rule_extracted=? WHERE attachment_id IN
+                          (SELECT id FROM bid_attachment WHERE notice_no=? AND doc_kind='CRITERIA')""",
+                       (int(res["rule_extracted"]), res["notice_no"]))
         if res["notice_no"] in edited:
             continue  # LLM·사용자가 고친 공고는 건드리지 않는다
         ids = []

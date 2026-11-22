@@ -194,6 +194,8 @@ python -m backend.db.extract_evaluation_rules --apply             # 백업 후 �
 | 감리 PQ (참여감리원·유사용역수행실적·신용도·업무중첩도) | 경력 년수·중복 개소 구간 `TABLE`(`input_key` `pq_grade`, `input_type` count), 비상주 등급 `TABLE`(select), 유사용역 실적 ÷ 사정금액 `TABLE`(`similar_amount`, 사정금액은 기준서 값 → 칸이 비었으면 SRM 사정액, `basis_source`), 자본·유동비율 ÷ 업종 평균 `TABLE`, 상주감리원 중복배치 없음 `FIXED`. 점수는 추정가격이 들어가는 용역금액 구간(4천만원 미만 / 4천만원~1억원 / 1억원~고시금액) 값 | [별표 12] 감리업자의 사업수행능력 세부평가기준 |
 | 기술용역 사업수행능력 | `FORMULA` `평가점수/100 × 배점`(`input_key` `pq_score`, 소수점 셋째자리 반올림). 100점 만점 평가점수의 세부 기준은 별도 '사업수행능력 세부평가기준' 문서(수집 안 됨)라 업체가 평가점수를 입력한다 | [별표 1] 배점표 심사항목 문구 |
 
+**규칙 추출 여부 (`bid_document_content.rule_extracted`, 2026-11-22):** 적격심사기준 본문마다 1 = 규칙 파서로 다 뽑음, 0 = 못 뽑은 게 있음(LLM 대상). 0 중 항목 하나만 못 읽은 공고(계산 방법이 문장뿐인 가감점·양성실적, 기준비율 값 없음)는 배점 행을 남기고 그 행만 `REVIEW`, 배점표 자체를 못 믿는 공고(PDF·zip, 금액 구간 불일치, 합계 안 맞음, 표 못 찾음)는 배점 행을 비운다. LLM 대상 = `rule_extracted=0` 이면서 배점 행이 없거나 파서가 넣은 `REVIEW` 행이 남은 공고 (`python -m backend.collector.fetch_attachments --llm-targets`). LLM이 고친 행은 `updated_by='LLM'`이라 대상에서 빠지고, 파서가 다시 돌아도 덮어쓰지 않는다.
+
 신인도 등급표의 `parameters.input_type`은 화면 입력 방식이다: `count`(모든 등급에 숫자 범위 → 횟수·인원·벌점을 숫자로 입력, `unit` 참고), `check`(숫자 없는 등급 1개 → 해당/비해당), `select`(숫자 없는 등급 여러 개 → 하나 고르기, 해당 없음 포함). 숫자가 없는 첫 등급('과징금 처분을 받은 사실이 있는 자') 다음이 '2회' 또는 '2회 이상'이면 첫 등급을 1회로 넣고 `inferred: true`를 단다(팀 결정 2026-11-22).
 
 ## 7. 아직 정하지 않은 것

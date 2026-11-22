@@ -119,6 +119,8 @@ class PqScoringTest(unittest.TestCase):
         cls.tmp = tempfile.mkdtemp()
         path = Path(cls.tmp) / "t.sqlite3"
         shutil.copy(DEFAULT_DB_PATH, path)
+        from backend.db.init_db import init_db
+        init_db(path).close()  # 사본에 최신 스키마 적용 (새 칸 rule_extracted 등)
         db = sqlite3.connect(path)
         for no in ("E012608054", "E012606818"):
             refresh_notice(db, no)
@@ -181,3 +183,83 @@ class DirectInputTest(unittest.TestCase):
         self.assertEqual(leaf(-1.4, -0.3), -0.3)
         self.assertEqual(leaf(-1.4, -5), -1.4)    # 한도 넘으면 한도
         self.assertEqual(leaf(0.4, 1), 0.4)       # 가점은 0 ~ 한도
+
+
+@unittest.skipUnless(DEFAULT_DB_PATH.exists(), "수집 DB 없음")
+class RuleExtractedTest(unittest.TestCase):
+    """기준서 본문 rule_extracted 표시와 LLM 대상 목록 (팀 결정 2026-11-22)
+    성공 → 1 / 항목만 못 읽음 → 0 + 행 유지(그 행만 REVIEW) / 배점표를 못 믿음 → 0 + 행 없음"""
+
+    def test_flags_and_targets(self):
+        import shutil, sqlite3, tempfile
+        from pathlib import Path
+        from backend.db.init_db import init_db
+        from backend.db.extract_evaluation_rules import refresh_notice
+        from backend.collector.fetch_attachments import llm_targets
+        tmp = tempfile.mkdtemp()
+        try:
+            path = Path(tmp) / "t.sqlite3"
+            shutil.copy(DEFAULT_DB_PATH, path)
+            init_db(path).close()
+            db = sqlite3.connect(path)
+            for no in ("E012608220", "E012608054", "E012608048"):  # 성공 / 감리 가감점만 문제 / PDF 기준서
+                refresh_notice(db, no)
+            db.commit()
+            flag = lambda no: db.execute("""SELECT DISTINCT c.rule_extracted FROM bid_document_content c
+                JOIN bid_attachment a ON a.id = c.attachment_id WHERE a.notice_no=? AND a.doc_kind='CRITERIA'""",
+                                         (no,)).fetchall()
+            rows = lambda no, extra="": db.execute(f"SELECT count(*) FROM evaluation_rule WHERE notice_no=? {extra}",
+                                                   (no,)).fetchone()[0]
+            self.assertEqual(flag("E012608220"), [(1,)])
+            self.assertEqual(flag("E012608054"), [(0,)])
+            self.assertGreater(rows("E012608054"), 0)                              # 멀쩡한 행은 남김
+            self.assertGreater(rows("E012608054", "AND verification_status='REVIEW'"), 0)
+            self.assertEqual(flag("E012608048"), [(0,)])
+            self.assertEqual(rows("E012608048"), 0)                                # 통째로 비움
+            limit = db.execute("SELECT max_score FROM evaluation_rule WHERE notice_no='E012608054' "
+                               "AND item_name='부실벌점'").fetchone()[0]
+            self.assertEqual(limit, -3.0)  # 표 안 구간별 최대 감점 (1억원 이상 고시금액 미만)
+            # LLM 이 REVIEW 행을 다 고치면 대상에서 빠진다
+            targets = llm_targets(path)
+            self.assertIn("E012608054", targets)
+            self.assertIn("E012608048", targets)
+            self.assertNotIn("E012608220", targets)
+            db.execute("UPDATE evaluation_rule SET updated_by='LLM' WHERE notice_no='E012608054' "
+                       "AND verification_status='REVIEW'")
+            db.commit()
+            self.assertNotIn("E012608054", llm_targets(path))
+            db.close()
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    def test_correction_invalidates_llm_rows(self):
+        """정정으로 기준서가 바뀌면 LLM이 넣은 행을 지우고 파서가 다시 뽑아 → 다시 LLM 대상"""
+        import shutil, sqlite3, tempfile
+        from pathlib import Path
+        from backend.db.init_db import init_db
+        from backend.db.extract_evaluation_rules import refresh_notice
+        from backend.collector.fetch_attachments import llm_targets
+        from backend.collector.collect import invalidate_edited_rules
+        tmp = tempfile.mkdtemp()
+        try:
+            path = Path(tmp) / "t.sqlite3"
+            shutil.copy(DEFAULT_DB_PATH, path)
+            init_db(path).close()
+            db = sqlite3.connect(path)
+            refresh_notice(db, "E012608054")
+            db.execute("UPDATE evaluation_rule SET updated_by='LLM' WHERE notice_no='E012608054' "
+                       "AND verification_status='REVIEW'")
+            db.commit()
+            self.assertNotIn("E012608054", llm_targets(path))
+            refresh_notice(db, "E012608054")  # 기준서 그대로면 파서가 LLM 공고를 건드리지 않음
+            self.assertGreater(db.execute("SELECT count(*) FROM evaluation_rule WHERE notice_no='E012608054' "
+                                          "AND updated_by='LLM'").fetchone()[0], 0)
+            self.assertGreater(invalidate_edited_rules(db, "E012608054"), 0)  # 정정 → LLM 행 삭제
+            refresh_notice(db, "E012608054")
+            db.commit()
+            self.assertEqual(db.execute("SELECT count(*) FROM evaluation_rule WHERE notice_no='E012608054' "
+                                        "AND updated_by<>'PARSER'").fetchone()[0], 0)
+            self.assertIn("E012608054", llm_targets(path))  # 다시 LLM 대상
+            db.close()
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
