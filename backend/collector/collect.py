@@ -31,6 +31,8 @@ from pathlib import Path
 
 from backend.collector import clients
 from backend.collector.doc_reader import PARSER_VERSION, document_problem, detect_ext, read_document
+from backend.db.extract_evaluation_rules import refresh_notice as refresh_evaluation_rules, top_tables
+from backend.schedule import refresh as refresh_schedule
 from backend.db.init_db import DEFAULT_DB_PATH, init_db
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -83,6 +85,14 @@ def has_criteria_text(filename, data):
         return False
     heading = re.compile(r"적격심사.{0,6}기준")  # 적격심사기준, 적격심사 세부기준, 적격심사 및 세부평가기준
     return any(heading.search(p) for p in (re.sub(r"\s+", "", x) for x in paragraphs) if len(p) <= 40)
+
+
+def criteria_has_score_table(db, notice_no):
+    """받아 둔 적격심사기준 중 배점표(입찰가격 행이 있는 표)가 있는 문서가 있는지"""
+    texts = [r[0] for r in db.execute("""
+        SELECT c.text FROM bid_attachment a JOIN bid_document_content c ON c.attachment_id = a.id
+        WHERE a.notice_no=? AND a.doc_kind='CRITERIA' AND c.read_status='SUCCESS'""", (notice_no,))]
+    return any(top_tables(t.split("\n"), None, False) for t in texts if t)
 
 
 def doc_kind(filename):
@@ -337,13 +347,20 @@ def collect_srm(db, srm, notice_no, found_kinds):
                (notice_no, "PARTIAL" if failed else "SUCCESS", f"조회 실패: {failed}" if failed else None,
                 *evals.values(), basic.get("limitedReasonCode"), json.dumps(raw, ensure_ascii=False), t))
 
-    # API에 없던 문서 종류만 SRM 전체 첨부에서 보완
+    # API에 없던 문서 종류만 SRM 전체 첨부에서 보완.
+    # 기준서를 받았어도 배점표(입찰가격 행)가 없으면 진짜 기준서를 놓친 것으로 보고 더 찾는다
+    # (E012606999: API 5개 중 'PQ 세부기준'만 잡히고 배점표가 든 '적격심사 세부기준'은 6번째 이후 첨부였음)
     missing = {"NOTICE", "CRITERIA"} - found_kinds
+    weak = "CRITERIA" in found_kinds and not criteria_has_score_table(db, notice_no)
+    if weak:
+        missing.add("CRITERIA")
+    saved = {r[0] for r in db.execute("SELECT filename FROM bid_attachment WHERE notice_no=? "
+                                      "AND download_status='SUCCESS'", (notice_no,))}
     if missing and basic.get("attachFileGroupId"):
         attachments = srm.attachments(basic["attachFileGroupId"])
         for att in attachments:
             kind = doc_kind(att.get("name"))
-            if kind not in missing:
+            if kind not in missing or (weak and att.get("name") in saved):
                 continue
             try:
                 data = srm.download(att["id"])
@@ -356,8 +373,8 @@ def collect_srm(db, srm, notice_no, found_kinds):
                 found_kinds.add(kind)
         # 이름에 '적격심사'가 없는 기준서 (예: E012606754 'pq심사기준' 안의 '5.2.1 적격심사기준'):
         # '심사기준' 후보를 받아 본문에 적격심사기준이 있을 때만 기준서로 저장
-        if "CRITERIA" not in found_kinds:
-            for att in (a for a in attachments if is_criteria_candidate(a.get("name"))):
+        if "CRITERIA" not in found_kinds or (weak and not criteria_has_score_table(db, notice_no)):
+            for att in (a for a in attachments if is_criteria_candidate(a.get("name")) and a.get("name") not in saved):
                 try:
                     data = srm.download(att["id"])
                 except clients.SrmBlocked:
@@ -399,6 +416,16 @@ def process_notice(db, srm, row):
         db.execute("UPDATE bid_notice SET needs_recollect=0, recollect_reason=NULL, last_collected_at=? "
                    "WHERE notice_no=?", (now(), notice_no))
         db.commit()
+        # 적격심사 배점(evaluation_rule)·일정(notice_schedule_event) 갱신. 실패해도 수집 결과는 그대로 두고 다음 공고로
+        try:
+            refresh_schedule(db, notice_no)
+            n, issues, detail = refresh_evaluation_rules(db, notice_no)
+            db.commit()
+            note = " / ".join(issues[:2] + detail[:2])
+            print(f"    배점 {n}행" + (f" (확인 필요: {note})" if note else ""))
+        except Exception as exc:
+            db.rollback()
+            print(f"    배점·일정 갱신 실패: {type(exc).__name__}: {exc}"[:300])
     return found
 
 

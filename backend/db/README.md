@@ -60,7 +60,7 @@ python -m backend.collector.collect --limit 5         # ④ 공고 수집
 | `collect_run` | `collect.py` ✅ | 수집 실행 결과 | 운영 확인용 |
 | `notice_analysis_cache` | **팀 결정 필요** (AI 파트 직접 vs 백엔드 API) | AI 분석 상태 | 예정: 수집기·AI 파트 재분석 판단 |
 | `company_bid_eligibility` | 예정: 룰 엔진 (업체 매칭은 현재 범위 밖) | `bid_restriction_*` + 업체 정보 | 07 뷰 |
-| `evaluation_rule` | 정근(배점·산식 추출). 그림 산식은 `formula_source='IMAGE'`로 남기고 LLM이 읽어 고침(`updated_by='LLM'`) | 적격심사기준 본문·수식·그림 | 예정: 점수 계산 탭 API |
+| `evaluation_rule` | `extract_evaluation_rules.py` (1단계: 배점표·입찰가격 산식·통과점수). 그림 산식은 `formula_source='IMAGE'`로 남기고 LLM이 읽어 고침(`updated_by='LLM'`) | 적격심사기준 본문·수식·그림 | 예정: 점수 계산 탭 API |
 | `company_evaluation_draft` | 예정: 점수 계산 API ← 프론트 점수 계산 탭(UI-04). 업체·공고당 직전 1건 | 사용자 입력(입찰가격·예정가격 등) + 계산 결과 | 예정: 점수 계산 탭 API, Q&A 봇(내 업체 것만) |
 | **`required_document_item`** | LLM 추출 저장 (칸 형식은 AI 파트와 확정) | AI 추출 (공고문·적격심사기준) | 예정: 필요서류 탭 API, 자동 심사 |
 | **`company_document_check`** | 예정: 서류 체크 API ← 프론트 필요서류 탭(UI-05) | 사용자 체크 + 발급일(선택) | 예정: 필요서류 탭 API, 자동 심사 |
@@ -164,6 +164,37 @@ python -m backend.db.reparse_documents --apply     # 백업 후 스키마 적용
 ```
 
 원본 파일 지문(sha256)이 DB와 같을 때만, 수식 개수가 그대로일 때만 바꾼다. 재파싱하면 본문 줄 번호가 바뀌므로 근거 위치는 줄 번호가 아니라 문서 구조(`별표1 > 제3조 > 표 2행`)와 해당 문구로 남긴다.
+
+### 적격심사 배점 추출 1단계 (2026-11-22)
+
+적격심사기준 본문에서 공고 추정가격(`presumed_price`)에 맞는 금액 구간의 [별표 1] 배점표를 골라 `evaluation_rule`에 넣는다(규칙 파서, LLM 안 씀). 1단계는 통과점수(`THRESHOLD`), 입찰가격 산식(`FORMULA`: 기준율·계수·A값 차감·반올림·최저평점·상한 구간), 수행능력 묶음과 분야별 배점(`GROUP`), 가감점 범위, 결격 감점(`FIXED`)까지다. 경영상태 구간표·신용등급표·신인도 표는 2·3단계에서 `GROUP` 아래에 붙인다.
+
+```bash
+python -m backend.db.extract_evaluation_rules                     # 미리보기 → dist/evaluation_rule_preview.json (DB 변경 없음)
+python -m backend.db.extract_evaluation_rules --notice E012608220 # 1건 결과 출력
+python -m backend.db.extract_evaluation_rules --apply             # 백업 후 스키마 적용 + 파서가 쓴 행만 지우고 다시 넣음
+```
+
+- 괄호 안 별도 구간(`전기·정보통신·소방공사 등은 …`)은 면허가 전기·정보통신·소방인 공사에 쓴다. 고시금액은 문서에 금액이 있으면 그 값, 없으면 공고일에 맞는 공식 고시금액(`OFFICIAL_NOTICE_AMOUNTS`, 2025~2026년 2.3억)을 쓴다. 기간 밖 공고는 2억~2.6억 사이를 판정 보류로 둔다 — 2027년 고시가 나오면 값을 추가해야 한다.
+- 배점 합계 ≠ 100, 산식·통과점수 못 찾음, 구간 판정 불가 등은 그 공고의 행을 `verification_status='REVIEW'`로 넣는다. `updated_by='LLM'`·`'USER'`로 고친 행이 있는 공고는 다시 돌려도 건드리지 않는다.
+- 매일 수집기가 공고를 처리할 때마다 그 공고만 자동으로 다시 뽑는다(`refresh_notice`). 전체를 다시 뽑을 때만 `--apply`를 직접 돌린다.
+- 파서가 확인할 수 없는 공고(PDF 기준서, 기준서 금액 구간이 공고 추정가격과 안 맞음 등)는 행을 만들지 않는다(수집기 확인 불가). AI 파트가 `fetch_attachments.llm_targets()`로 찾아 원본을 LLM으로 읽고 `updated_by='LLM'`으로 넣는다. 상한 구간 등은 원문 값을 그대로 쓴다(E012608225 `88.25% 이상 85점`).
+- `rule_type`에 묶음 행 `GROUP`을 추가했다(표가 비어 있으면 `init_db`가 새 정의로 다시 만든다).
+
+### 적격심사 배점 추출 2단계 (2026-11-22)
+
+같은 명령(`extract_evaluation_rules`)이 1단계 행 아래(`parent_id`)에 세부 표를 붙인다. 세부 표를 못 읽은 항목은 그 행만 `REVIEW`로 두고 1단계 결과는 그대로 둔다.
+
+| 항목 | 넣는 행 | 근거 |
+|---|---|---|
+| 경영상태 | `재무비율`(GROUP) 아래 부채·유동·자기자본비율·영업기간 `TABLE`(`rows`: 기준치 배수 구간별 점수, `basis`: 기준치 %), `신용평가등급` `TABLE`. 둘 중 택1이면 경영상태에 `choose_one` | [별표 2] 구간표·기준치 표·신용등급표. 금액 구간별 표·A/B공사 칸은 추정가격으로 고름, `× 15/45` 환산은 `scale` |
+| 시공경험 | 실적 비율 `FORMULA`(`min(실적누계액 / (사정액 × 배수) × 배점, 상한)`, 사정액은 기준서 값 → 없으면 SRM), 인원당 점수·필수장비·배치기술자 | [별표 2] 또는 배점표 주석의 시공경험 평가방법 |
+| 사업소 숙지도 | `OFFICE` `TABLE`(해당/인접/비인접 점수, 해당·인접 사업소 이름) 또는 `FIXED`(광역시·도 안이면 배점) | 시공경험 절 |
+| 신인도·가감점 | 1단계 가감점 묶음 아래 등급별 `TABLE`(`rows`: 원문 등급·점수 + 숫자 범위 `min`·`max`·`unit`, 배점 칸은 비움), 감리 가점·감점은 `건당 점수 × 건수, 최대점` `FORMULA` | [별표 2] 신인도 표, 변전은 [별표 1] 배점표 행 |
+| 감리 PQ (참여감리원·유사용역수행실적·신용도·업무중첩도) | 경력 년수·중복 개소 구간 `TABLE`(`input_key` `pq_grade`, `input_type` count), 비상주 등급 `TABLE`(select), 유사용역 실적 ÷ 사정금액 `TABLE`(`similar_amount`, 사정금액은 기준서 값 → 칸이 비었으면 SRM 사정액, `basis_source`), 자본·유동비율 ÷ 업종 평균 `TABLE`, 상주감리원 중복배치 없음 `FIXED`. 점수는 추정가격이 들어가는 용역금액 구간(4천만원 미만 / 4천만원~1억원 / 1억원~고시금액) 값 | [별표 12] 감리업자의 사업수행능력 세부평가기준 |
+| 기술용역 사업수행능력 | `FORMULA` `평가점수/100 × 배점`(`input_key` `pq_score`, 소수점 셋째자리 반올림). 100점 만점 평가점수의 세부 기준은 별도 '사업수행능력 세부평가기준' 문서(수집 안 됨)라 업체가 평가점수를 입력한다 | [별표 1] 배점표 심사항목 문구 |
+
+신인도 등급표의 `parameters.input_type`은 화면 입력 방식이다: `count`(모든 등급에 숫자 범위 → 횟수·인원·벌점을 숫자로 입력, `unit` 참고), `check`(숫자 없는 등급 1개 → 해당/비해당), `select`(숫자 없는 등급 여러 개 → 하나 고르기, 해당 없음 포함). 숫자가 없는 첫 등급('과징금 처분을 받은 사실이 있는 자') 다음이 '2회' 또는 '2회 이상'이면 첫 등급을 1회로 넣고 `inferred: true`를 단다(팀 결정 2026-11-22).
 
 ## 7. 아직 정하지 않은 것
 

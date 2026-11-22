@@ -86,7 +86,7 @@ UPDATE srm_region_district_master SET
 
 # 2026-11-21 범위 정리로 없앤 표, 정의를 바꾼 표. 데이터가 있으면 지우지 않고 멈춘다
 RETIRED_TABLES = ("document_extraction", "license_equivalence", "company_notification_setting", "document_template_item")
-REDEFINED_TABLES = (("evaluation_rule", "rule_type"),        # (표, 새 정의에만 있는 칸)
+REDEFINED_TABLES = (("evaluation_rule", "'GROUP'"),          # (표, 새 정의 CREATE 문에만 있는 글자)
                     ("favorite_notice", "user_id"),
                     ("notice_notification", "user_id"))
 
@@ -95,8 +95,9 @@ def drop_retired(db):
     """없앤 표와 옛 정의 표를 지운다(비어 있을 때만). 옛 정의 표는 뒤이어 스키마 파일이 새 정의로 만든다."""
     existing = {r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
     targets = [t for t in RETIRED_TABLES if t in existing]
-    targets += [t for t, column in REDEFINED_TABLES
-                if t in existing and column not in {r[1] for r in db.execute(f"PRAGMA table_info({t})")}]
+    targets += [t for t, marker in REDEFINED_TABLES
+                if t in existing and marker not in db.execute(
+                    "SELECT sql FROM sqlite_master WHERE type='table' AND name=?", (t,)).fetchone()[0]]
     for table in targets:
         rows = db.execute(f"SELECT count(*) FROM {table}").fetchone()[0]
         if rows:
