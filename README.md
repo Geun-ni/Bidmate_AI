@@ -20,6 +20,12 @@ python -m backend.server
 | --- | --- |
 | `GET /api/notices` | 진행 중 한전 공사·용역 적격심사 공고 목록 (`?include_closed=1`이면 마감 포함) + 마지막 수집 실행 결과. 값이 없으면 `null` |
 | `GET /api/notices/<공고번호>` | 기본정보 + 면허·적격자격 조건(조회 전·실패는 `status: "확인 필요"`) + SRM 상세(A금액·경비·개찰일시) |
+| `POST /api/notices/<공고번호>/score` | 예상 점수 계산(저장 안 함). 본문 `{"inputs": {"bid_price", "planned_price", "management_method": "ratio"\|"credit", "<규칙 key>": 값}}` → 항목별 점수·미산정·산정 보류, 합계, 통과점수 비교. 입력 안 한 항목은 0점이 아니라 미산정 ([backend/scoring.py](backend/scoring.py) 맨 위 설명) |
+| `GET /api/notices/<공고번호>/schedule` | 공고 일정(신청·투찰·개찰 + 적격심사서류 제출기한 원문 문구. 제출기한은 통보 후 정해져 날짜 없음) |
+| `GET /api/schedule?from=YYYY-MM-DD&to=YYYY-MM-DD` | 달력용 기간 일정 |
+| `GET /api/reference/regions` · `licenses?q=` · `qualifications` | 업체 입력용 선택 목록 (SRM 광역·시군구, 면허, 제한경쟁입찰자격) |
+| `POST /api/companies` · `GET/PUT /api/companies/<업체ID>` | 업체정보(기본정보·본점 소재지·면허·자격) 등록·조회·수정. 1차 자격 판정은 AI 파트(LLM) 담당 |
+| `PUT/GET /api/companies/<업체ID>/evaluation-drafts/<공고번호>` | 점수 계산 후 저장 / 직전 계산 결과 조회 (업체·공고당 1건) |
 | `GET /api/notices/<공고번호>/evaluation` | 적격심사 배점·산식 계층(`rules`: 통과점수·입찰가격 산식·수행능력 분야와 세부 표·가감점·결격) + 요약(`summary`). 배점이 없으면 `status: "확인 필요"`와 이유(기준서 없음, AI 분석 대기 등) |
 | `GET /api/demo` | 가상 업체 프로필과 룰을 통과한 공고 목록 (기본 화면이 사용) |
 

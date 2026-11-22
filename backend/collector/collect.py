@@ -32,6 +32,7 @@ from pathlib import Path
 from backend.collector import clients
 from backend.collector.doc_reader import PARSER_VERSION, document_problem, detect_ext, read_document
 from backend.db.extract_evaluation_rules import refresh_notice as refresh_evaluation_rules, top_tables
+from backend.schedule import refresh as refresh_schedule
 from backend.db.init_db import DEFAULT_DB_PATH, init_db
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -415,15 +416,16 @@ def process_notice(db, srm, row):
         db.execute("UPDATE bid_notice SET needs_recollect=0, recollect_reason=NULL, last_collected_at=? "
                    "WHERE notice_no=?", (now(), notice_no))
         db.commit()
-        # 적격심사 배점(evaluation_rule) 갱신. 실패해도 수집 결과는 그대로 두고 다음 공고로 넘어간다
+        # 적격심사 배점(evaluation_rule)·일정(notice_schedule_event) 갱신. 실패해도 수집 결과는 그대로 두고 다음 공고로
         try:
+            refresh_schedule(db, notice_no)
             n, issues, detail = refresh_evaluation_rules(db, notice_no)
             db.commit()
             note = " / ".join(issues[:2] + detail[:2])
             print(f"    배점 {n}행" + (f" (확인 필요: {note})" if note else ""))
         except Exception as exc:
             db.rollback()
-            print(f"    배점 추출 실패: {type(exc).__name__}: {exc}"[:300])
+            print(f"    배점·일정 갱신 실패: {type(exc).__name__}: {exc}"[:300])
     return found
 
 

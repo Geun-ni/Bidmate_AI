@@ -107,7 +107,8 @@ def get_notice(db, notice_no):
 def _rule_node(row):
     params = row["parameters"]
     return {
-        "id": row["id"], "category": row["category"], "name": row["item_name"], "rule_type": row["rule_type"],
+        "id": row["id"], "key": str(row["position"]),  # key: 점수 계산 입력 키 (재추출해도 문서가 같으면 그대로)
+        "category": row["category"], "name": row["item_name"], "rule_type": row["rule_type"],
         "max_score": row["max_score"], "formula": row["formula"], "formula_source": row["formula_source"],
         "parameters": json.loads(params) if params else None, "input_key": row["input_key"],
         "rounding": {"digits": row["rounding_digits"], "mode": row["rounding_mode"]}
