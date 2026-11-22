@@ -1,10 +1,11 @@
-"""적격심사기준 본문(bid_document_content) → evaluation_rule 1단계 추출 (규칙 파서, LLM 안 씀)
+"""적격심사기준 본문(bid_document_content) → evaluation_rule 추출 (규칙 파서, LLM 안 씀)
 
-1단계 범위: 공고 추정가격에 맞는 [별표 1] 배점표를 골라
+1단계: 공고 추정가격에 맞는 [별표 1] 배점표를 골라
   - 통과점수 (PASS_SCORE / THRESHOLD)
   - 입찰가격 배점과 평가산식 (PRICE / FORMULA): 기준율·계수·A값 차감·반올림·최저평점·상한 구간
   - 수행능력 묶음과 그 아래 분야별 배점 (GROUP), 가감점 범위, 기술자 미달 등 결격 감점 (FIXED)
-세부 점수표(경영상태 구간표, 신용등급표, 신인도 표)는 2·3단계에서 GROUP 아래에 붙인다.
+2단계: 1단계 행 아래 세부 표 — 경영상태 구간표·기준치·신용등급표, 시공경험 산식·사정액, 사업소 숙지도,
+  신인도·가감점 등급표. 세부 표를 못 읽으면 그 행만 REVIEW (detail_issues).
 
 - 금액 구간이 여러 개면 bid_notice.presumed_price(추정가격) 가 들어가는 구간의 표를 쓴다.
   '전기·정보통신·소방공사 등은 …' 처럼 괄호 안 별도 구간이 있으면 전기공사 공고는 그 구간을 쓴다.
@@ -579,6 +580,557 @@ def pass_score(text, price=None, gosi=None):
     return None, None
 
 
+# ------------------------------------------------------------------ 2단계: 경영상태 세부 표
+# 재무비율 구간표: '① 최근년도 부채비율 / = [수식] / 【 7 】 | ◦ 기준치×0.5 미만 / ◦ 기준치×0.5이상～ 기준치×0.75미만 … | 7.0 / 6.2 …'
+RATIO_NAMES = {"부채비율": ("debt_ratio", "부채총계/자기자본×100"), "유동비율": ("current_ratio", "유동자산/유동부채×100"),
+               "자기자본비율": ("equity_ratio", "자기자본/총자산×100"), "영업기간": ("business_years", None)}
+BASIS_BOUND = re.compile(r"기준치\s*×\s*(\d+(?:\.\d+)?)\s*(이상|이하|초과|미만)")
+YEAR_BOUND = re.compile(r"(\d+(?:\.\d+)?)\s*년\s*(이상|이하|초과|미만)")
+
+
+def grade_rows(grades, scores, bound_re):
+    """'기준치×1.0이상～기준치×1.3미만' 목록 + 점수 목록 → [{min, min_inc, max, max_inc, score}]"""
+    if len(grades) != len(scores):
+        return None
+    out = []
+    for g, s in zip(grades, scores):
+        row = {"min": None, "min_inc": None, "max": None, "max_inc": None, "score": s}
+        bounds = bound_re.findall(g)
+        if not bounds:
+            return None
+        for value, kind in bounds:
+            if kind in ("이상", "초과"):
+                row["min"], row["min_inc"] = float(value), kind == "이상"
+            else:
+                row["max"], row["max_inc"] = float(value), kind == "이하"
+        out.append(row)
+    return out
+
+
+def ratio_table(lines, start, end, grade_col=0, grade_cols=1):
+    """재무비율 구간표 1개 → [{name, max, rows, uses_basis, quote}] (못 읽는 표면 None).
+    'A공사 | B공사'처럼 등급 칸이 여러 개면 grade_cols 개 중 grade_col 번째 칸을 읽는다."""
+    items = []
+    body = "\n".join(lines[start + 2:end])
+    body = re.sub(r"\[수식:[^\]]*\]", lambda m: m.group(0).replace("\n", " "), body)  # 수식 안 줄바꿈으로 행이 끊김
+    for raw in body.split("\n"):
+        cells = split_cells(raw)
+        if len(cells) < 3:
+            continue
+        name = next((n for n in RATIO_NAMES if n in compact(cells[0])), None)
+        if not name:
+            continue
+        if len(cells) < 2 + grade_cols:
+            continue
+        grades = [g for g in cells[1 + grade_col].split(" / ") if g.strip()]
+        scores = [to_num(x) for x in re.findall(NUM, cells[1 + grade_cols])]
+        limit = bracket_score(cells[0])
+        if limit is None and scores:
+            limit = max(scores)  # '③ 영업기간 | … | 1.0 / 0.9 / 0.8' 처럼 한도 표시가 없으면 최고점
+        uses_basis = "기준치" in cells[1 + grade_col]
+        rows = grade_rows(grades, scores, BASIS_BOUND if uses_basis else YEAR_BOUND)
+        if not rows:
+            return None
+        items.append({"name": name, "max": limit, "rows": rows, "uses_basis": uses_basis, "quote": raw[:300]})
+    # '득점 = (심사항목 ①항+②항+③항) × 15/45' → 합계를 한도에 맞게 환산
+    scale = re.search(r"득점\s*=.*?×\s*(\d+(?:\.\d+)?)\s*/\s*(\d+(?:\.\d+)?)", body)
+    if items and scale:
+        items[0]["scale"] = (float(scale.group(1)), float(scale.group(2)))
+    return items or None
+
+
+PCT_BOUND = re.compile(r"(\d+(?:\.\d+)?)\s*%\s*(이상|이하|초과|미만)")
+
+
+def embedded_ratio(lines):
+    """배점표 안에 들어간 기준비율 등급 (진단·기술용역 고시금액 미만):
+    '‘최근년도자기자본비율 ’ / (자기자본/총자산)/기준비율 | 5' 다음 줄 'A. 100%이상 / … | (5) / (4.5) / …'
+    → (항목들, 줄 위치, 문서에 적힌 기준비율)"""
+    items, inline, at = [], {}, None
+    for i, line in enumerate(lines[:-1]):
+        cells = split_cells(line)
+        k = next((j for j, c in enumerate(cells) if "기준비율" in c and any(n in compact(c) for n in RATIO_NAMES)), None)
+        if k is None or not re.match(r"\s*A\.\s*\d", lines[i + 1]):
+            continue
+        name = next(n for n in RATIO_NAMES if n in compact(cells[k]))
+        limit = next((to_num(c) for c in cells[k + 1:] if re.fullmatch(r"\s*\d+(?:\.\d+)?\s*", c)), None)
+        grade_cells = split_cells(lines[i + 1])
+        grades = [g for g in grade_cells[0].split(" / ") if g.strip()]
+        scores = [to_num(x) for x in re.findall(r"\((\d+(?:\.\d+)?)\)", grade_cells[1] if len(grade_cells) > 1 else "")]
+        rows = grade_rows(grades, scores, PCT_BOUND)
+        if limit is None or not rows:
+            return None, None, None
+        for r in rows:  # 100% → 기준비율의 1.0배
+            r["min"] = None if r["min"] is None else r["min"] / 100
+            r["max"] = None if r["max"] is None else r["max"] / 100
+        m = re.search(r"기준비율\s*:\s*(\d+(?:\.\d+)?)\s*%", cells[k])
+        if m:
+            inline[name] = float(m.group(1))
+        items.append({"name": name, "max": limit, "rows": rows, "uses_basis": True, "quote": line[:300]})
+        at = at if at is not None else i
+    return items or None, at, inline
+
+
+def credit_list_cell(lines):
+    """한 칸에 이어 적힌 등급표 (폐기물 처리용역):
+    '회사채ㆍ기업신용평가 / 기업어음 / 평 점 / AAA / - / 10.0 / AA+, AA0, AA- / A1 / 10.0 / …'"""
+    for line in lines:
+        for cell in split_cells(line):
+            parts = [p.strip() for p in cell.split(" / ")]
+            if len(parts) < 9 or "회사채" not in parts[0] or "기업어음" not in parts[1]:
+                continue
+            rest = parts[3:]
+            if len(rest) % 3:
+                continue
+            rows = []
+            for a, b, s in zip(rest[0::3], rest[1::3], rest[2::3]):
+                if not re.fullmatch(r"\d+(?:\.\d+)?", s):
+                    return None
+                rows.append({"회사채": a, "기업어음": b, "기업신용평가": a, "score": float(s)})
+            return rows
+    return None
+
+
+def credit_table(lines, start, end, price=None, gosi=None, special=False, limit=None):
+    """신용평가등급표 → [{회사채, 기업어음, 기업신용평가, score}].
+    점수 칸이 금액 구간별('추정가격 5억원이상 | 5억원미만') 또는 배점한도별('배점한도별' / '20점 | 10점')로
+    나뉜 표는 맞는 칸을 읽는다. 한 칸에 여러 등급('AAA / AA+, AA0, AA- / A+')이 묶인 행은 등급마다 나눈다."""
+    data_start, pick = start + 2, 0
+    if start + 3 < end and "배점한도별" in compact(lines[start + 2]):
+        heads = [to_num(c) for c in split_cells(lines[start + 3]) if re.fullmatch(r"\s*\d+(?:\.\d+)?\s*점\s*", c)]
+        if limit not in heads:
+            return None
+        data_start, pick = start + 4, heads.index(limit)
+    elif start + 2 < end:
+        bands = [b for b in (band_for(c, gosi, special) for c in split_cells(lines[start + 2])) if b]
+        if len(bands) >= 2:
+            fits = [i for i, b in enumerate(bands) if price is not None and in_band(price, b) is True]
+            if len(fits) != 1:
+                return None
+            data_start, pick = start + 3, fits[0]
+    out = []
+    for raw in lines[data_start:end]:
+        cells = split_cells(raw)
+        nums = [c for c in cells[3:] if re.fullmatch(r"\s*\d+(?:\.\d+)?\s*", c)]
+        if len(cells) < 4 or pick >= len(nums):
+            continue
+        score = float(nums[pick])
+        a_list, b_list = cells[0].split(" / "), cells[1].split(" / ")
+        if len(a_list) > 1 and len(a_list) == len(b_list):
+            out += [{"회사채": a.strip(), "기업어음": b.strip(), "기업신용평가": a.strip(), "score": score}
+                    for a, b in zip(a_list, b_list)]
+        else:
+            out.append({"회사채": cells[0], "기업어음": cells[1], "기업신용평가": cells[2], "score": score})
+    return out or None
+
+
+def basis_values(lines, start, limit=80):
+    """구간표 뒤 가까운 기준치 표 → {'부채비율': 120.77, '유동비율': 142.57}"""
+    for s, e in tables(lines):
+        if s < start or s > start + limit:
+            continue
+        body = [split_cells(l) for l in lines[s + 1:e]]
+        if not body:
+            continue
+        header = body[0]
+        names = [next((n for n in RATIO_NAMES if n in compact(c)), None) for c in header]
+        if not any(names):
+            continue
+        for row in body[1:]:
+            values = [re.search(r"(\d+(?:\.\d+)?)\s*\)?\s*%", c) for c in row]
+            if sum(1 for v in values if v) >= 1:
+                found = {n: float(v.group(1)) for n, v in zip(names, values) if n and v}
+                if found:
+                    return found, "\n".join(lines[s:e + 1])[:300]
+    return None, None
+
+
+def section_band(lines, start, gosi, special):
+    """표 위쪽에서 가장 가까운 금액 구간 제목 ('가. 추정가격 50억원 미만 10억원 이상인 공사')"""
+    for j in range(start - 1, max(-1, start - 15), -1):
+        if "추정가격" in lines[j]:
+            b = band_for(lines[j], gosi, special)
+            if b:
+                return b
+    return None
+
+
+def pick_by_band(cands, lines, price, gosi, special):
+    """같은 점수의 후보 표가 여러 개면 위쪽 금액 구간 제목으로 고른다. 내용이 같으면 첫 표."""
+    if len({json.dumps(c[2], ensure_ascii=False, sort_keys=True) for c in cands}) <= 1:
+        return cands[0] if cands else None
+    fit = [c for c in cands if (b := section_band(lines, c[0], gosi, special)) and in_band(price, b) is True]
+    return fit[0] if len(fit) == 1 or (fit and len({json.dumps(c[2], sort_keys=True) for c in fit}) == 1) else None
+
+
+def management_details(lines, limit, price, gosi, special, wants_credit=True, wants_ratio=True):
+    """경영상태 한도(예: 15) → (재무비율 항목들, 기준치, 신용등급표, 근거, 문제 목록)"""
+    issues, ratio, credit, basis, quotes = [], None, None, None, {}
+    ratio_cands, credit_cands, ab_table = [], [], False
+    for s, e in tables(lines):
+        body = "\n".join(lines[s + 1:e])
+        if s + 2 < e and re.search(r"A공사.*B공사", compact(lines[s + 2])) and "기준치" in body:
+            # 'A공사 | B공사' 칸으로 나뉜 구간표: 표 아래 주석 "'A'공사는 추정가격 50억원미만 10억원 이상인 공사에 적용"
+            notes = re.sub(r"[‘’'\"]", "", "\n".join(lines[e:e + 25]))
+            col = None
+            for k, letter in enumerate("AB"):
+                m = re.search(letter + r"\s*공사는\s*([^\n]+?)에\s*적용", notes)
+                b = band_for(m.group(1), gosi, special) if m else None
+                if b and price is not None and in_band(price, b) is True:
+                    col = k
+            items = ratio_table(lines, s, e, col, 2) if col is not None else None
+            if items and abs(sum(i["max"] for i in items) - limit) < 1e-6:
+                ratio_cands.append((s, e, items))
+            else:
+                ab_table = True
+            continue
+        if "기준치" in body and re.search(r"부채비율|유동비율|자기자본비율", compact(body)):
+            items = ratio_table(lines, s, e)
+            total = sum(i["max"] for i in items) if items else None
+            scale = items[0].get("scale") if items else None
+            if items and (abs(total - limit) < 1e-6 or (scale and abs(scale[1] - total) < 1e-6
+                                                       and abs(scale[0] - limit) < 1e-6)):
+                ratio_cands.append((s, e, items))
+        if "신용평가등급" in compact(lines[s + 1]):
+            rows = credit_table(lines, s, e, price, gosi, special, limit)
+            if rows and abs(max(r["score"] for r in rows) - limit) < 1e-6:
+                credit_cands.append((s, e, rows))
+    picked = pick_by_band(ratio_cands, lines, price, gosi, special)
+    if picked:
+        s, e, ratio = picked
+        if any(i["uses_basis"] for i in ratio):
+            basis, quotes["basis"] = basis_values(lines, e)
+            missing = [i["name"] for i in ratio if i["uses_basis"] and (not basis or i["name"] not in basis)]
+            if missing:
+                issues.append(f"경영상태 기준치 못 찾음({', '.join(missing)})")
+        credit_after = [c for c in credit_cands if c[0] > s]
+        credit_cands = credit_after[:1] or credit_cands
+    elif ratio_cands:
+        issues.append("경영상태 재무비율 구간표가 금액 구간별로 여러 개라 못 고름")
+    else:
+        items, at, inline = embedded_ratio(lines)
+        if items and abs(sum(i["max"] for i in items) - limit) < 1e-6:
+            ratio = items
+            basis, quotes["basis"] = (inline, None) if len(inline) == len(items) else basis_values(lines, at)
+            missing = [i["name"] for i in ratio if not basis or i["name"] not in basis]
+            if missing:  # 예: '기준비율은 … 입찰공고 시 별도 명시한다'인데 공고문에도 값이 없음
+                issues.append(f"경영상태 기준비율 값이 문서에 없음({', '.join(missing)})")
+        elif ab_table:
+            issues.append("경영상태 구간표가 A공사/B공사로 나뉘는데 구분 기준이 문서에 없음")
+        elif wants_ratio:
+            issues.append("경영상태 재무비율 구간표 못 찾음")
+    c = pick_by_band(credit_cands, lines, price, gosi, special)
+    if c:
+        credit = c[2]
+        quotes["credit"] = "\n".join(lines[c[0]:c[0] + 4])[:300]
+    else:
+        listed = credit_list_cell(lines)
+        if listed and abs(max(r["score"] for r in listed) - limit) < 1e-6:
+            credit = listed
+        elif wants_credit:
+            issues.append("경영상태 신용평가등급표 못 찾음")
+    return ratio, basis, credit, quotes, issues
+
+
+# ------------------------------------------------------------------ 2단계: 시공경험 산식
+EXP_HEAD = re.compile(r"시공\s*경험\s*\(\s*(?:최대\s*)?(\d+(?:\.\d+)?)\s*점")
+SUB_HEAD = re.compile(r"^\s*(?:[①-⑩]|[가-하]\.|\d\))\s*(.+?)\s*\(\s*(?:평점\s*상한은?\s*|가산점\s*상한은?\s*)?(\d+(?:\.\d+)?)\s*점")
+FRACTION = re.compile(r"\{([^{}]*실적\s*(?:누계액|합계|누계점수)[^{}]*)\}\s*over\s*\{([^{}]*)\}")  # 금액 또는 규모(C-km)
+AMOUNT_TEXT = re.compile(r"(사정액|예비가격\s*기초금액)[^\n:：]{0,30}[:：]\s*￦?\s*([\d,]{6,})")
+
+
+def clean_label(s):
+    return re.sub(r"\s+", " ", re.sub(r"[~`]|\brm\b|LEFT|RIGHT|left|right|\(|\)", " ", s)).strip()
+
+
+def experience_section(lines, limit, price, gosi, special, table_start=0):
+    """[별표 2]의 '시공경험(18점)' 절 (다음 '경영상태' 절 전까지) → (시작, 끝) 또는 None.
+    송전 양식처럼 배점표 바로 아래 '주1) 시공경험 평가방법'에 있으면 그 절."""
+    cands = []
+    for i, line in enumerate(lines):
+        m = EXP_HEAD.search(line)
+        if not m or abs(float(m.group(1)) - limit) > 1e-6:
+            continue
+        end = next((j for j in range(i + 1, min(len(lines), i + 200))
+                    if re.search(r"경영\s*상태\s*\(|^\s*(?:\d+|[가-하])\.\s*경영\s*상태", lines[j])), min(len(lines), i + 120))
+        cands.append((i, end, "\n".join(lines[i:end])))
+    picked = pick_by_band(cands, lines, price, gosi, special)
+    if picked:
+        return picked[:2]
+    for i in range(table_start, min(len(lines), table_start + 80)):
+        if re.search(r"시공\s*경험\s*평가\s*방법", lines[i]):
+            end = next((j for j in range(i + 1, min(len(lines), i + 120))
+                        if re.match(r"\s*주\s*\d\)", lines[j]) or "경영상태" in lines[j][:20]), min(len(lines), i + 80))
+            return i, end
+    return None
+
+
+def experience_items(lines, start, end, limit):
+    """시공경험 절 → [{name, cap, formula, params, quote, bonus}]"""
+    items, heading = [], None
+    sec = lines[start:end]
+    text = "\n".join(sec)
+    amounts = {re.sub(r"\s+", "", m.group(1)): int(m.group(2).replace(",", "")) for m in AMOUNT_TEXT.finditer(text)}
+    rd = ROUND_RE.search(text)
+    for k, line in enumerate(sec):
+        h = SUB_HEAD.match(line)
+        if h:
+            name = clean_label(h.group(1))
+            name = name.split("대비 ")[-1] if "대비 " in name else name  # '…사정액 대비 최근 5년간 해당업종 실적누계액 비율'
+            heading = {"name": name, "cap": float(h.group(2)), "bonus": "가산점" in line}
+        f = FRACTION.search(line.replace("~", " ").replace("`", " "))
+        if f:
+            num_raw, den = f.group(1), f.group(2)
+            mult = re.search(r"(?:×|TIMES)\s*(\d+(?:\.\d+)?)\s*(?:/\s*(\d+))?", den)
+            multiplier = (float(mult.group(1)) / float(mult.group(2) or 1)) if mult else 1.0
+            num_mult = re.search(r"(?:×|TIMES)\s*(\d+(?:\.\d+)?)", num_raw)  # '실적누계액 TIMES 2' = 분모 × 0.5
+            if num_mult:
+                multiplier /= float(num_mult.group(1))
+            num = clean_label(re.sub(r"(?:×|TIMES).*$", "", num_raw))
+            den_label = clean_label(re.sub(r"(?:×|TIMES).*$", "", den))
+            after = line.replace("~", " ").replace("`", " ")[f.end():]
+            pts = re.search(r"(?:×|TIMES)\s*(\d+(?:\.\d+)?)\s*(?:\(?\s*점)?", after)
+            points = float(pts.group(1)) if pts else None  # '× 배점' 이면 제목의 점수
+            look = "\n".join(sec[max(0, k - 4):k + 1])
+            caps = list(re.finditer(r"(?:평점\s*)?상한은?\s*(\d+(?:\.\d+)?)\s*점", look))
+            cap = caps[-1] if caps else None  # 산식에 가장 가까운 상한 문구
+            name = heading["name"] if heading else num
+            cap_value = float(cap.group(1)) if cap else (heading["cap"] if heading else points)
+            points = points if points is not None else cap_value
+            basis = "예비가격기초금액" if "예비가격" in den_label else "사정액" if "사정액" in den_label else den_label
+            items.append({"name": name, "cap": cap_value, "bonus": bool(heading and heading["bonus"]),
+                          "formula": f"min({num} / ({basis} × {multiplier:g}) × {points:g}, {cap_value:g})",
+                          "params": {"numerator": num, "denominator": basis, "multiplier": multiplier,
+                                     "points": points, "cap": cap_value,
+                                     "base_amount": amounts.get(re.sub(r"\s+", "", basis))},
+                          "quote": line.strip()[:300]})
+            heading = None
+            continue
+        per = re.search(r"1\s*인당\s*(\d+(?:\.\d+)?)\s*점", line)
+        if per and heading and not any(i["name"] == heading["name"] for i in items):
+            items.append({"name": heading["name"], "cap": heading["cap"], "bonus": False,
+                          "formula": f"min(인원 × {float(per.group(1)):g}, {heading['cap']:g})",
+                          "params": {"per_unit": float(per.group(1)), "unit": "인", "cap": heading["cap"]},
+                          "quote": line.strip()[:300]})
+    items += other_experience_items(sec, items)
+    return items, (ORDINAL[rd.group(1)] - 1 if rd else None), amounts
+
+
+OTHER_HEAD = re.compile(r"^\s*(\d\.|[가-하]\.|[①-⑩])\s*(.+?)\s*\(\s*(\+)?\s*(\d+(?:\.\d+)?)\s*점\s*\)")
+
+
+def other_experience_items(sec, found):
+    """실적 비율 산식이 아닌 시공경험 항목 (송전 필수장비·배치기술자·기능인력, 표 없는 사업소 숙지도 등).
+    계산 방법을 못 읽은 항목도 배점은 남기고 rule_type='GROUP', review=True 로 둔다."""
+    out, skip_style = [], None
+    known = [compact(i["name"]) for i in found]
+    for k, line in enumerate(sec[1:], 1):
+        h = OTHER_HEAD.match(line)
+        if not h:
+            continue
+        style = re.sub(r"[0-9]", "0", re.sub(r"[가-하]", "가", re.sub(r"[①-⑩]", "①", h.group(1))))
+        if skip_style and style != skip_style:
+            continue  # 가점 항목의 하위 세목 ('4. 기능인력 (+1.0점)' 아래 '가. … (+0.2점)')
+        skip_style = None
+        name, plus, cap = clean_label(h.group(2)), h.group(3), float(h.group(4))
+        key = compact(name)
+        if any(key in n or n in key for n in known) or "실적누계액" in key:
+            continue
+        near = "\n".join(sec[k:k + 5])
+        base = {"name": name, "cap": cap, "bonus": bool(plus), "quote": line.strip()[:300], "formula": None}
+        pairs = re.findall(r"([가-힣A-Za-z]+)\s*\(\s*(\d+(?:\.\d+)?)\s*점\s*\)", line[h.end():])
+        if plus:
+            out.append({**base, "rule_type": "GROUP", "params": {"min": 0, "max": cap, "설명": sec[k + 1].strip()[:200]
+                                                                   if k + 1 < len(sec) else None}, "review": True})
+            skip_style = style
+        elif len(pairs) >= 2:  # '필수장비 보유여부 (3점) : 엔진풀러 (1.5점), 텐셔너 (1.5점)'
+            out.append({**base, "rule_type": "FIXED", "input_key": "equipment_owned",
+                        "params": {"items": [{"name": n, "score": float(v)} for n, v in pairs]}})
+        elif re.search(r"365\s*(?:TIMES|×)\s*(\d+)\s*년", near):  # '(배점) × A / (365 × 3년)'
+            years = int(re.search(r"365\s*(?:TIMES|×)\s*(\d+)\s*년", near).group(1))
+            out.append({**base, "rule_type": "FORMULA", "input_key": "engineer_days",
+                        "formula": f"min({cap:g} × 경력일수 / (365 × {years}), {cap:g})",
+                        "params": {"A": "동종공사 시공참여 경력(근무일수)", "days": 365 * years, "cap": cap}})
+        elif "숙지도" in name:  # 표 없이 '광역시·도에 본점이 있으면 배점'
+            out.append({**base, "rule_type": "FIXED", "input_key": "office_location", "category": "OFFICE",
+                        "params": {"score": cap, "condition": "공사현장이 속한 광역시·특별시·특별자치도·도에 본점 소재"}})
+        else:
+            out.append({**base, "rule_type": "GROUP", "params": {"설명": sec[k + 1].strip()[:200] if k + 1 < len(sec)
+                                                                  else None}, "review": True})
+        known.append(key)
+    return out
+
+
+def office_table(lines, start, end):
+    """사업소 숙지도 표 ('본점 소재지 | 해당 사업소 | 인접 사업소 | 비인접 사업소' / '평점 | 2 | 1 | 0')
+    + 해당·인접 사업소 이름 → {name, cap, rows, office, adjacent, quote}"""
+    for s, e in tables(lines):
+        if s < start or s > end or e - s < 3:
+            continue
+        head, vals = split_cells(lines[s + 1]), split_cells(lines[s + 2])
+        if not any("해당" in compact(c) and "사업소" in c for c in head):
+            continue
+        levels = [compact(c) for c in head[1:]]
+        scores = [to_num(v) for v in vals[1:] if re.fullmatch(r"\s*\d+(?:\.\d+)?\s*", v)]
+        if len(levels) != len(scores):
+            continue
+        after = "\n".join(lines[e:min(end, e + 12)])
+        office = (re.search(r"해당\s*공사현장이\s*속한\s*한전\s*사업소\s*\(([^)]+)\)", after)
+                  or re.search(r"해당\s*공사현장이\s*속한\s*한전\s*([가-힣]+(?:지사|본부|사업소))", after))
+        adjacent = re.search(r"인접한\s*사업소\s*\(([^)]+)\)", after)
+        heading = next((l for l in reversed(lines[max(start, s - 25):s]) if re.search(r"숙지도.*\d+\s*점", l)), "")
+        cap = re.search(r"(\d+(?:\.\d+)?)\s*점", heading)
+        return {"name": "사업소 숙지도", "cap": float(cap.group(1)) if cap else max(scores),
+                "rows": [{"level": l, "score": sc} for l, sc in zip(levels, scores)],
+                "office": office.group(1).strip() if office else None,
+                "adjacent": [x.strip() for x in adjacent.group(1).split(",")] if adjacent else None,
+                "outside_region_score": 0 if re.search(r"소재하지\s*않는\s*경우\s*0\s*점", after) else None,
+                "quote": "\n".join(lines[s:e + 1])[:300]}
+    return None
+
+
+# ------------------------------------------------------------------ 2단계: 신인도·가감점 세부 표
+SIGNED = r"[+\-△]\s*\d+(?:\.\d+)?|(?<![\d.])0(?:\.0+)?(?![\d.])"
+BAND_HEAD = re.compile(r"^\s*(?:[가-하]\.|[ⅠⅡⅢⅣ]\.?|\d\.)\s*\[?\s*추정가격")
+
+
+def bonus_table_fits(lines, s, price, gosi, special):
+    """신인도 표가 이 공고에 해당하는지: 서식·별지 안의 표는 빼고,
+    표 위쪽 가장 가까운 금액 구간 제목('가. 추정가격 50억원 미만 10억원 이상인 공사')이 추정가격에 맞아야 한다."""
+    for j in range(s - 1, -1, -1):
+        line = lines[j]
+        if line.startswith("[서식") or line.startswith("[별지"):
+            return False
+        if line.startswith("[별표"):
+            break
+    # 금액 구간이 'Ⅰ. 추정가격 …'처럼 문서 최상위로 나뉜 양식(송전·변전)이 아니면, 다른 [별표]의 구간 제목은 보지 않는다
+    # (용역·감리: [별표 1] 구간별 배점표 뒤의 [별표 2] 신인도·[별표 11] 평가표는 모든 구간에 공통)
+    roman_doc = any(re.match(r"\s*[ⅠⅡⅢⅣ]\.?\s*추정가격", l) for l in lines)
+    section_seen = False  # '2. 신인도'처럼 구간 하위('가.','나.')를 끝내는 상위 절 제목을 지났는지
+    for j in range(s - 1, -1, -1):
+        line = lines[j]
+        if not roman_doc and line.startswith("[별표"):
+            return True
+        if re.match(r"\s*\d+\.\s*(?:신인도|가점|감점)", line):
+            section_seen = True
+        if BAND_HEAD.match(line):
+            if section_seen and not re.match(r"\s*[ⅠⅡⅢⅣ]", line):
+                continue  # 송전: 경영상태의 '가./나.' 금액 구간 뒤에 공통 '2. 신인도' → 상위 'Ⅰ.' 구간으로 판단
+            b = band_for(line, gosi, special)
+            return not b or price is None or in_band(price, b) is not False
+    return True
+
+
+def bonus_tables(lines, price, gosi, special):
+    """신인도 표 → [{group, name, condition, rows:[{grade, score}], scale, quote}]
+    표 안 소제목 행('1. 건설안전 신인도(배점 : -5∼+0.1)', '2. 일반신인도 [배점 : ±1, 아래 점수 × 1/3]')으로 묶음을 나눈다."""
+    out = []
+    for s, e in tables(lines):
+        if not bonus_table_fits(lines, s, price, gosi, special):
+            continue
+        head = lines[s + 1]
+        if re.search(r"세부\s*항목", head) and re.search(r"배\s*점", head):
+            out += detail_item_table(lines, s, e)  # 용역 '심사항목 | 세부항목 | 배점 | 비고'
+            continue
+        if "세부평가방법" in compact(head):
+            out += method_table(lines, s, e)  # 감리 '평가항목 | 평가요소 | 세부평가방법' 의 가점·감점 행
+            continue
+        if not (re.search(r"등\s*급", head) and re.search(r"평\s*점|배\s*점", head)) or "신용" in head:
+            continue
+        group = next((l.strip() for l in reversed(lines[max(0, s - 4):s]) if re.search(r"신인도|가점|감점", l)), "")
+        name = None
+        for raw in lines[s + 2:e]:
+            cells = split_cells(raw)
+            if len(cells) == 1:
+                if re.search(r"신인도|가점|감점|배점", raw):
+                    group = raw.strip()
+                continue
+            score_cell, grade_cell = cells[-1], cells[-2] if len(cells) >= 2 else ""
+            scores = [to_num(x) for x in re.findall(SIGNED, score_cell)]
+            if not scores:
+                continue
+            grades = [g.strip() for g in grade_cell.split(" / ") if g.strip()]
+            if len(grades) != len(scores):
+                grades = [grade_cell.strip()] if len(scores) == 1 else None
+            if not grades:
+                continue
+            condition = cells[-3] if len(cells) >= 3 else ""
+            if re.fullmatch(r"\s*[+\-△]?\s*\d+(?:\.\d+)?\s*", condition) and len(cells) >= 4:
+                condition = cells[-4]  # '평가요소 | 배점 | 등급 | 평점' 양식의 배점 칸 건너뜀
+            if len(cells) >= 4 or (len(cells) == 3 and not condition):
+                name = clean_label(re.sub(r"\(.*?\)", "", cells[0].replace(" / ", " "))) or name
+            sub = re.match(r"\s*\d\)\s*([^/]+)", condition)
+            item = clean_label(sub.group(1))[:40] if sub and len(sub.group(1)) < 40 else (name or "")
+            scale = re.search(r"×\s*(\d+)\s*/\s*(\d+)", group)
+            out.append({"group": group, "name": item or name or "신인도", "condition": condition[:300],
+                        "rows": [{"grade": g, "score": sc} for g, sc in zip(grades, scores)],
+                        "scale": [int(scale.group(1)), int(scale.group(2))] if scale else None, "quote": raw[:300]})
+    return out
+
+
+def detail_item_table(lines, s, e):
+    """'가. 유사실적 | A. … | 2.0 | 비고' / 'B. … | 0.2 |' (병합 행) → 심사항목별 [{name, rows:[{grade, score}]}]"""
+    ncols = len(split_cells(lines[s + 1]))
+    groups, name = {}, None
+    for raw in lines[s + 2:e]:
+        cells = split_cells(raw)
+        if len(cells) >= ncols:
+            name = clean_label(cells[0].replace(" / ", " ")) or name
+            grade, score_cell = cells[1], cells[2]
+        elif len(cells) >= 2:
+            grade, score_cell = cells[0], cells[1]
+        else:
+            continue
+        nums = re.findall(SIGNED + r"|\d+(?:\.\d+)?", score_cell)
+        if not nums or not name:
+            continue
+        groups.setdefault(name, []).append({"grade": grade.split(" / ")[0].strip()[:200], "score": to_num(nums[0])})
+    return [{"group": "신인도", "name": n, "condition": "", "rows": r, "scale": None,
+             "quote": "\n".join(lines[s:s + 3])[:300]} for n, r in groups.items()]
+
+
+def method_table(lines, s, e):
+    """감리 PQ 표의 '마. 가점 감점' 행들 → 항목별 규칙 (건당·기간당 점수, 최대 점수).
+    예: '(6)부정당 업체 | … 합산기간 1월마다 0.1점씩 감점하되 최대 0.8점까지 감점'"""
+    out, inside = [], False
+    for raw in lines[s + 2:e]:
+        cells = split_cells(raw)
+        if len(cells) >= 3:
+            inside = bool(re.search(r"가점|감점", compact(cells[0])))
+            name_cell, text = cells[1], cells[2]
+        elif len(cells) == 2 and inside:
+            name_cell, text = cells[0], cells[1]
+        else:
+            continue
+        if not inside:
+            continue
+        name = clean_label(re.sub(r"^\(\d\)\s*", "", name_cell.replace(" / ", "")))
+        minus = "감점" in text and "가점" not in text
+        caps = re.findall(r"최대\s*(\d+(?:\.\d+)?)\s*점", text)
+        per = re.search(r"(\d+(?:\.\d+)?)\s*점씩", text)
+        cap = sum(float(c) for c in caps) if caps else None
+        if len(caps) > 1:
+            per = None  # 업체·감리원 등 규칙이 여러 개 섞인 행 → 원문 확인
+        rule = {"per_unit": float(per.group(1)) if per else None, "sign": -1 if minus else 1,
+                "설명": text[:300]}
+        out.append({"group": "가점/감점", "name": name or "가점/감점", "condition": text[:300],
+                    "rows": [{"grade": "최대", "score": (-cap if minus else cap) if cap is not None else 0.0}],
+                    "rule": rule, "scale": None, "quote": raw[:300]})
+    return out
+
+
+def bonus_parent(rows, group):
+    """신인도 세부 행을 붙일 1단계 가감점 묶음 행 번호 (건설안전/일반 이름으로 맞추고, 없으면 첫 가감점 묶음)"""
+    cands = [i for i, r in enumerate(rows) if r["category"] == "BONUS" and r["rule_type"] == "GROUP"
+             and r.get("source_location", "").startswith("[별표 1]")]
+    key = "건설안전" if "건설안전" in compact(group) else "일반" if "일반" in compact(group) else None
+    if key:
+        hit = [i for i in cands if key in compact(rows[i]["item_name"])]
+        if hit:
+            return hit[0]
+    return cands[0] if cands else None
+
+
 # ------------------------------------------------------------------ 공고 1건
 def is_special(db, notice_no, title):
     names = " ".join(r[0] or "" for r in db.execute(
@@ -710,6 +1262,152 @@ def extract_notice(db, notice_no):
                 parameters={"score": it["score"], "condition": it.get("detail")},
                 source_location="[별표 1] 배점표 > 결격여부", source_quote=it["quote"][:300])
 
+    # 3-2) 2단계 세부 표: 경영상태 (재무비율 구간표 + 기준치, 신용평가등급표 중 입찰자가 하나 선택)
+    result["detail_issues"] = []
+    for mi in [i for i, r in enumerate(rows) if r["category"] == "MANAGEMENT" and r["item_name"] == "경영상태"]:
+        mgmt = rows[mi]
+        if mgmt["max_score"] is None:
+            continue
+        detail = (mgmt.get("parameters") or {}).get("심사항목") or ""
+        ratio, basis, credit, quotes, issues = management_details(
+            lines, mgmt["max_score"], price, gosi, special, wants_credit=bool(re.search(r"신용|회사채", detail)),
+            wants_ratio=bool(re.search(r"부채|유동|자기자본|재무", detail)) or not detail)
+        result["detail_issues"] += issues
+        status = "REVIEW" if issues else "UNVERIFIED"
+        if ratio:
+            scale = ratio[0].get("scale")
+            fparams = {k: v for k, v in (("basis", basis), ("scale", scale and {"numerator": scale[0],
+                       "denominator": scale[1], "note": "하위 합계 × 분자/분모"})) if v}
+            fi = add(parent=mi, category="MANAGEMENT", item_name="재무비율", rule_type="GROUP",
+                     max_score=mgmt["max_score"] if scale else sum(i["max"] for i in ratio), parameters=fparams or None,
+                     verification_status=status, source_location="[별표 2] 경영상태 > 재무비율",
+                     source_quote=quotes.get("basis"))
+            for it in ratio:
+                key, formula = RATIO_NAMES[it["name"]]
+                params = {"rows": it["rows"], "value_unit": "기준치 배수" if it["uses_basis"] else "년"}
+                if it["uses_basis"]:
+                    params["basis"] = (basis or {}).get(it["name"])
+                add(parent=fi, category="MANAGEMENT", item_name=it["name"], rule_type="TABLE", max_score=it["max"],
+                    formula=formula, formula_source="TEXT" if formula else None, parameters=params, input_key=key,
+                    verification_status=status, source_location=f"[별표 2] 경영상태 > {it['name']}",
+                    source_quote=it["quote"])
+        if credit:
+            add(parent=mi, category="MANAGEMENT", item_name="신용평가등급", rule_type="TABLE",
+                max_score=max(r["score"] for r in credit), parameters={"rows": credit, "no_grade_score": 0},
+                input_key="credit_grade", verification_status=status,
+                source_location="[별표 2] 경영상태 > 신용평가등급", source_quote=quotes.get("credit"))
+        if ratio and credit:
+            mgmt["parameters"] = {**(mgmt.get("parameters") or {}), "choose_one": ["재무비율", "신용평가등급"]}
+
+    # 3-3) 2단계 세부 표: 시공경험 (실적누계액 ÷ (사정액 × 배수) × 배점, 상한·반올림·사정액)
+    amounts = db.execute("SELECT approximate_amount, estimated_price_basic_amount FROM bid_notice WHERE notice_no=?",
+                         (notice_no,)).fetchone()
+    for ei in [i for i, r in enumerate(rows) if r["item_name"] == "시공경험" and r["rule_type"] == "GROUP"]:
+        exp = rows[ei]
+        if exp["max_score"] is None:
+            continue
+        sec = experience_section(lines, exp["max_score"], price, gosi, special, table["start"])
+        if not sec:
+            other = sorted({float(m.group(1)) for l in lines for m in [EXP_HEAD.search(l)] if m})
+            result["detail_issues"].append(
+                f"시공경험 세부 배점({', '.join(f'{v:g}' for v in other)}점)이 배점표({exp['max_score']:g}점)와 달라 "
+                "환산 양식으로 보임 — 원문 확인 필요" if other else "시공경험 세부 절 못 찾음")
+            continue
+        exp_items, digits, _ = experience_items(lines, sec[0], sec[1], exp["max_score"])
+        issues = []
+        if not exp_items:
+            issues.append("시공경험 산식 못 찾음")
+        for it in exp_items:
+            p = it["params"]
+            if p.get("denominator") == "사정액":
+                if p.get("base_amount") is None:
+                    p["base_amount"], p["base_amount_source"] = amounts[0], "SRM 사정액"
+                else:
+                    p["base_amount_source"] = "기준서"
+                    if amounts[0] and p["base_amount"] != amounts[0]:
+                        issues.append(f"기준서 사정액 {p['base_amount']:,} ≠ SRM 사정액 {amounts[0]:,}")
+            elif p.get("denominator") == "예비가격기초금액":
+                p["base_amount"], p["base_amount_source"] = amounts[1], "SRM 예비가격기초금액"
+        office = office_table(lines, sec[0], sec[1])
+        if office:  # 표로 읽은 숙지도가 있으면 제목만 보고 만든 숙지도 항목은 뺀다
+            exp_items = [i for i in exp_items if i.get("category") != "OFFICE"]
+        if office and not office["office"]:
+            issues.append("사업소 숙지도: 해당 사업소 이름 못 찾음")
+        filled = sum(i["cap"] for i in exp_items if not i["bonus"]) + (office["cap"] if office else 0)
+        if exp_items and filled < exp["max_score"] - 1e-6:
+            issues.append(f"시공경험 일부 항목 미추출 ({filled:g}/{exp['max_score']:g}점)")
+        elif filled > exp["max_score"] + 1e-6:
+            issues.append(f"시공경험 세부 배점 합계({filled:g}점)가 한도({exp['max_score']:g}점)보다 큼")
+        result["detail_issues"] += issues
+        status = "REVIEW" if issues else "UNVERIFIED"
+        if office:
+            add(parent=ei, category="OFFICE", item_name=office["name"], rule_type="TABLE", max_score=office["cap"],
+                parameters={k: office[k] for k in ("rows", "office", "adjacent", "outside_region_score")},
+                input_key="office_location", verification_status=status,
+                source_location="[별표 2] 시공경험 > 사업소 숙지도", source_quote=office["quote"])
+        for it in exp_items:
+            key = it.get("input_key") or (
+                "same_kind_amount" if "동종" in it["name"] else "trained_workers" if "교육" in it["name"]
+                else "developed_workers" if "양성" in it["name"] else "performance_amount")
+            if it.get("review"):
+                result["detail_issues"].append(f"시공경험 '{it['name'][:20]}' 계산 방법은 원문 확인 필요")
+            formula = it.get("formula")
+            add(parent=ei, category=it.get("category") or ("BONUS" if it["bonus"] else "PERFORMANCE"),
+                item_name=it["name"], rule_type=it.get("rule_type", "FORMULA"), max_score=it["cap"], formula=formula,
+                formula_source=("EQUATION" if "실적" in formula else "TEXT") if formula else None,
+                parameters=it["params"], input_key=None if it.get("review") else key,
+                rounding_digits=digits if formula else None,
+                rounding_mode="ROUND" if formula and digits is not None else None,
+                verification_status="REVIEW" if it.get("review") else status,
+                source_location="[별표 2] 시공경험", source_quote=it["quote"])
+
+    # 3-4) 2단계 세부 표: 신인도·가감점 (등급별 가·감점 표)
+    if any(r["category"] == "BONUS" for r in rows):
+        found = bonus_tables(lines, price, gosi, special)
+        in_table = False
+        if not found:  # 변전: 등급별 점수가 [별표 1] 배점표 행 안에 있음 ('A. 사망자 1명 / B. … | -2.0 / -3.5 / …')
+            for i, r in enumerate(list(rows)):
+                if r["category"] != "BONUS" or not r.get("source_location", "").startswith("[별표 1]"):
+                    continue
+                cells = split_cells(r.get("source_quote") or "")
+                for k, cell in enumerate(cells[:-1]):
+                    grades = [g.strip() for g in cell.split(" / ") if re.match(r"\s*[A-G]\.\s", g)]
+                    scores = [to_num(x) for x in re.findall(SIGNED, cells[k + 1])]
+                    if len(grades) >= 2 and len(grades) == len(scores):
+                        in_table = True
+                        add(parent=i, category="BONUS", item_name=r["item_name"], rule_type="TABLE",
+                            max_score=max(scores), input_key="bonus_grade",
+                            parameters={"group": r["item_name"], "condition": cell.split(" / A.")[0][:300],
+                                        "rows": [{"grade": g, "score": sc} for g, sc in zip(grades, scores)]},
+                            source_location="[별표 1] 배점표 > 신인도 등급", source_quote=r["source_quote"])
+        if not found and not in_table:
+            result["detail_issues"].append("신인도 세부 표 못 찾음")
+        for b in found:
+            parent = bonus_parent(rows, b["group"])
+            if parent is None:
+                continue
+            params = {"group": b["group"][:100], "condition": b["condition"], "rows": b["rows"]}
+            if b["scale"]:
+                params["scale"] = {"numerator": b["scale"][0], "denominator": b["scale"][1]}
+            if b.get("rule"):  # 감리: 건당·기간당 점수 + 최대 점수 (규칙 문장)
+                rule = b["rule"]
+                limit = b["rows"][0]["score"]
+                params = {"group": b["group"], "per_unit": rule["per_unit"], "sign": rule["sign"],
+                          "limit": limit, "설명": rule["설명"]}
+                ok = rule["per_unit"] is not None and limit
+                if not ok:
+                    result["detail_issues"].append(f"가점/감점 '{b['name'][:15]}' 계산 방법은 원문 확인 필요")
+                add(parent=parent, category="BONUS", item_name=b["name"], rule_type="FORMULA" if ok else "GROUP",
+                    max_score=limit, formula=(f"{'-' if rule['sign'] < 0 else ''}min(건수 × {rule['per_unit']:g}, "
+                                              f"{abs(limit):g})") if ok else None,
+                    formula_source="TEXT" if ok else None, parameters=params,
+                    input_key="bonus_count" if ok else None, verification_status="UNVERIFIED" if ok else "REVIEW",
+                    source_location="[별표 2] 신인도", source_quote=b["quote"])
+                continue
+            add(parent=parent, category="BONUS", item_name=b["name"], rule_type="TABLE",
+                max_score=max(r["score"] for r in b["rows"]), parameters=params, input_key="bonus_grade",
+                source_location="[별표 2] 신인도", source_quote=b["quote"])
+
     # 4) 검산: 수행능력 묶음 합 + 입찰가격 = 100, 묶음 안 분야 합 = 묶음 한도
     total = next((i["score"] for i in items if i["kind"] == "TOTAL"), None)
     groups = [r for r in rows if r["rule_type"] == "GROUP" and r["parent"] is None]
@@ -778,6 +1476,15 @@ def summarize(results):
             counts[key] = counts.get(key, 0) + 1
     for k, v in sorted(counts.items(), key=lambda x: -x[1]):
         print(f"  {v:3d}  {k}")
+    detail = {}
+    for r in results:
+        for i in r.get("detail_issues", []):
+            key = re.sub(r"[\d,.]+", "N", i)
+            detail[key] = detail.get(key, 0) + 1
+    if detail:
+        print("2단계 세부 표 (해당 행만 REVIEW):")
+        for k, v in sorted(detail.items(), key=lambda x: -x[1]):
+            print(f"  {v:3d}  {k}")
 
 
 def main():
