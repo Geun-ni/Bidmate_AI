@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from ai.document_staging import apply_review, export, ingest, migrate, open_database
+from ai.document_staging import apply_review, export, ingest, ingest_collected_db, migrate, open_database
 
 
 class StagingTest(unittest.TestCase):
@@ -94,6 +94,37 @@ class StagingTest(unittest.TestCase):
         target.commit()
         with self.assertRaises(ValueError):
             migrate(self.db, target_path, apply=True)
+        target.close()
+
+    def test_collected_db_import_and_review_migration(self):
+        target_path = self.folder / "collected.sqlite3"
+        target = sqlite3.connect(target_path)
+        target.executescript("""
+            CREATE TABLE bid_attachment(id INTEGER PRIMARY KEY, notice_no TEXT, filename TEXT,
+                doc_kind TEXT, sha256 TEXT);
+            CREATE TABLE bid_document_content(attachment_id INTEGER, read_status TEXT, text TEXT);
+        """)
+        definition = self.db.execute("SELECT sql FROM sqlite_master WHERE name='required_document_item'").fetchone()[0]
+        target.execute(definition.replace(" REFERENCES staging_notice(notice_no)", "")
+                       .replace(" REFERENCES staging_source(attachment_id)", ""))
+        target.execute("INSERT INTO bid_attachment VALUES (1,'E001','기준.hwp','CRITERIA','filehash')")
+        target.execute("INSERT INTO bid_document_content VALUES (1,'SUCCESS',?)", (self.text,))
+        target.commit()
+        self.assertEqual(ingest_collected_db(self.db, target_path), 1)
+        self.assertEqual(ingest_collected_db(self.db, target_path), 0)
+        self.db.execute("""INSERT INTO required_document_item
+            (notice_no,stage,submit_to,position,name,requirement_type,source_attachment_id,
+             source_location,verification_status)
+            VALUES ('E001','QUALIFICATION','CONTRACT_DEPT',1,'사업자등록증','REQUIRED',1,
+                    '제8조','REVIEW')""")
+        item_id = self.db.execute("SELECT last_insert_rowid()").fetchone()[0]
+        self.db.execute("INSERT INTO staging_evidence VALUES (?,?,?,?,?,?)",
+                        (item_id, "사업자등록증", "제8조", "filehash", "hash", "openai-documents-v1"))
+        self.db.commit()
+        self.assertEqual(migrate(self.db, target_path)["would_insert"], 0)
+        self.assertGreater(migrate(self.db, target_path, include_review=True)["would_insert"], 0)
+        self.assertGreater(migrate(self.db, target_path, apply=True, include_review=True)["inserted"], 0)
+        self.assertEqual(target.execute("SELECT verification_status FROM required_document_item").fetchone()[0], "REVIEW")
         target.close()
 
 

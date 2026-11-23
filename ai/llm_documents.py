@@ -13,6 +13,7 @@ from urllib.request import Request, urlopen
 
 from ai.document_staging import digest, insert_item, open_database
 from ai.env import load_env
+from ai.rule_documents import extract_notice as extract_rule_candidates
 
 
 DEFAULT_MODEL = "gpt-6-luna"
@@ -64,13 +65,13 @@ def load_notice(connection, notice):
     return dict(cache), sources
 
 
-def request_payload(notice, sources, model, max_output_tokens):
+def request_payload(notice, sources, model, max_output_tokens, rule_candidates=None):
     prompt = PROMPT_PATH.read_text(encoding="utf-8")
-    # All text is provided; regex candidates are intentionally excluded.
     inputs = {
         "notice_no": notice,
         "sources": [{key: s[key] for key in
                      ("attachment_id", "filename", "doc_kind", "content")} for s in sources],
+        "rule_candidates": rule_candidates or [],
     }
     return {
         "model": model, "store": False, "max_output_tokens": max_output_tokens,
@@ -251,7 +252,9 @@ def extract(connection, notice, folder, model, max_chars, max_output_tokens,
     cache, sources = load_notice(connection, notice)
     if cache["analysis_status"] == "DONE":
         return {"notice_no": notice, "status": "already_reviewed"}
-    payload = request_payload(notice, sources, model, max_output_tokens)
+    # Candidate lists are hints only; the model still audits every source for omissions.
+    candidates = extract_rule_candidates(connection, notice)["items"]
+    payload = request_payload(notice, sources, model, max_output_tokens, candidates)
     input_chars = len(json.dumps(payload, ensure_ascii=False))
     if input_chars > max_chars:
         raise ValueError(f"Input exceeds --max-chars ({input_chars}); no text was truncated")

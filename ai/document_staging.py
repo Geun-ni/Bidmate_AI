@@ -157,6 +157,65 @@ def ingest(connection, folder):
     return len(changed_notices)
 
 
+def ingest_collected_db(connection, source_path):
+    """Stage collected NOTICE/CRITERIA text from the team's SQLite database."""
+    source_db = sqlite3.connect(source_path.resolve().as_uri() + "?mode=ro", uri=True)
+    source_db.row_factory = sqlite3.Row
+    changed_notices = set()
+    now = datetime.now(timezone.utc).isoformat()
+    try:
+        rows = source_db.execute("""SELECT a.id attachment_id,a.notice_no,a.filename,a.doc_kind,
+            a.sha256,c.read_status,c.text FROM bid_attachment a
+            LEFT JOIN bid_document_content c ON c.attachment_id=a.id
+            ORDER BY a.id""").fetchall()
+        source_ids = {row["attachment_id"] for row in rows}
+        with connection:
+            removed = []
+            for old_source in connection.execute("SELECT attachment_id,notice_no FROM staging_source"):
+                if old_source["attachment_id"] not in source_ids:
+                    changed_notices.add(old_source["notice_no"])
+                    removed.append(old_source["attachment_id"])
+            for row in rows:
+                attachment_id = row["attachment_id"]
+                notice = row["notice_no"]
+                content = row["text"] or ""
+                status = row["read_status"] or "MISSING"
+                text_hash = digest(content)
+                metadata = json.dumps({"source": "collected_db", "filename": row["filename"],
+                                       "sha256": row["sha256"]}, ensure_ascii=False, sort_keys=True)
+                old = connection.execute("SELECT * FROM staging_source WHERE attachment_id=?",
+                                         (attachment_id,)).fetchone()
+                if old and (old["notice_no"], old["filename"]) != (notice, row["filename"]):
+                    raise ValueError(f"Attachment ID {attachment_id} reused; use a new staging DB")
+                connection.execute("INSERT OR IGNORE INTO staging_notice VALUES (?)", (notice,))
+                if old and (old["metadata"], old["text_sha256"], old["read_status"]) == (metadata, text_hash, status):
+                    continue
+                changed_notices.add(notice)
+                connection.execute("""INSERT INTO staging_source VALUES (?,?,?,?,?,?,?,?,?)
+                    ON CONFLICT(attachment_id) DO UPDATE SET source_sha256=excluded.source_sha256,
+                    text_sha256=excluded.text_sha256,read_status=excluded.read_status,
+                    content=excluded.content,metadata=excluded.metadata""",
+                    (attachment_id, notice, row["filename"], row["doc_kind"], row["sha256"],
+                     text_hash, status, content, metadata))
+            for notice in changed_notices:
+                connection.execute("""DELETE FROM staging_evidence WHERE item_id IN
+                    (SELECT id FROM required_document_item WHERE notice_no=?)""", (notice,))
+                connection.execute("DELETE FROM required_document_item WHERE notice_no=?", (notice,))
+            for attachment_id in removed:
+                connection.execute("DELETE FROM staging_source WHERE attachment_id=?", (attachment_id,))
+            for notice in changed_notices:
+                sources = connection.execute("""SELECT attachment_id,source_sha256,text_sha256,read_status
+                    FROM staging_source WHERE notice_no=? ORDER BY attachment_id""", (notice,)).fetchall()
+                version = digest(json.dumps([list(source) for source in sources]))
+                connection.execute("""INSERT INTO notice_analysis_cache VALUES (?,?,?, ?,NULL)
+                    ON CONFLICT(notice_no) DO UPDATE SET document_version=excluded.document_version,
+                    analysis_status=excluded.analysis_status,analyzed_at=excluded.analyzed_at,
+                    invalidated_at=excluded.analyzed_at""", (notice, version, "PENDING", now))
+    finally:
+        source_db.close()
+    return len(changed_notices)
+
+
 def insert_item(connection, item, source, extractor_version=VERSION):
     columns = ",".join(ITEM_FIELDS)
     markers = ",".join("?" for _ in ITEM_FIELDS)
@@ -297,14 +356,16 @@ def export(connection, folder):
     return report
 
 
-def migrate(connection, target_path, apply=False):
-    """Map attachment IDs and insert reviewed rows into an existing SQLite DB."""
+def migrate(connection, target_path, apply=False, include_review=False):
+    """Map attachment IDs and insert evidence-checked rows into an existing SQLite DB."""
     rows = connection.execute(
         """SELECT r.*, s.filename, s.source_sha256, e.source_quote
         FROM required_document_item r JOIN staging_source s ON s.attachment_id=r.source_attachment_id
         JOIN staging_evidence e ON e.item_id=r.id
         JOIN notice_analysis_cache c ON c.notice_no=r.notice_no
-        WHERE r.verification_status='VERIFIED' AND c.analysis_status='DONE'"""
+        WHERE (r.verification_status='VERIFIED' AND c.analysis_status='DONE')
+           OR (? AND r.verification_status='REVIEW' AND c.analysis_status='PENDING'
+               AND e.extractor_version LIKE '%-documents-v1')""", (int(include_review),)
     ).fetchall()
     target = sqlite3.connect(target_path.resolve().as_uri() + "?mode=rw", uri=True)
     target.row_factory = sqlite3.Row
@@ -358,16 +419,23 @@ def main():
     parser.add_argument("--db", type=Path, default=Path(".local/document-staging.sqlite3"))
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("ingest").add_argument("folder", type=Path)
+    sub.add_parser("ingest-db").add_argument("source", type=Path)
     sub.add_parser("review").add_argument("jsonl", type=Path)
     sub.add_parser("export").add_argument("folder", type=Path)
     migration = sub.add_parser("migrate")
     migration.add_argument("target", type=Path)
     migration.add_argument("--apply", action="store_true")
+    migration.add_argument("--include-review", action="store_true",
+                           help="Also transfer LLM rows as REVIEW; they are not VERIFIED")
     args = parser.parse_args()
     connection = open_database(args.db)
     try:
         if args.command == "ingest":
             print(json.dumps({"changed_notices": ingest(connection, args.folder)}))
+        elif args.command == "ingest-db":
+            if args.source.resolve() == args.db.resolve():
+                raise ValueError("Source DB must differ from staging DB")
+            print(json.dumps({"changed_notices": ingest_collected_db(connection, args.source)}))
         elif args.command == "review":
             print(json.dumps({"reviewed_notices": apply_review(connection, args.jsonl)}))
         elif args.command == "export":
@@ -375,7 +443,7 @@ def main():
         else:
             if args.target.resolve() == args.db.resolve():
                 raise ValueError("Target DB must differ from staging DB")
-            print(json.dumps(migrate(connection, args.target, args.apply)))
+            print(json.dumps(migrate(connection, args.target, args.apply, args.include_review)))
     finally:
         connection.close()
 
