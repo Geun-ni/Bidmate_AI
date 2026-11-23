@@ -9,7 +9,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlsplit
 
 from ai.summary import summarize_notice
-from backend import auth, companies_api, favorites, notices_api, schedule, scoring
+from backend import auth, companies_api, favorites, notices_api, schedule, scoring, uploaded_criteria
 from backend.matching import match_notice
 
 
@@ -134,7 +134,17 @@ window.close();</script>""")
             case ("GET", ["api", "auth", "me"]):                     # 로그인 안 했으면 {"user": null}
                 return (lambda db, b: {"user": user}), False
             case ("POST", ["api", "notices", no, "score"]):          # 예상 점수 계산 (저장 안 함)
-                return (lambda db, b: scoring.calculate(db, no, b.get("inputs") or {})), False
+                # company_id 를 주면 공용 배점이 없을 때 그 업체가 올린 기준서로 계산 (소속 업체만)
+                return (lambda db, b: scoring.calculate(
+                    db, no, b.get("inputs") or {},
+                    company_id=b.get("company_id") if b.get("company_id") and user and
+                    auth.can_access_company(db, user, b.get("company_id")) else None)), False
+            case ("PUT", ["api", "companies", cid, "uploaded-criteria", no]):  # 기준서 직접 올리기 (본문=파일)
+                return (lambda db, b: uploaded_criteria.upload(db, cid, no, q("filename"), b, user)), True
+            case ("GET", ["api", "companies", cid, "uploaded-criteria", no]):
+                return (lambda db, b: uploaded_criteria.get(db, cid, no, user)), True
+            case ("DELETE", ["api", "companies", cid, "uploaded-criteria", no]):
+                return (lambda db, b: uploaded_criteria.remove(db, cid, no, user)), True
             case ("GET", ["api", "schedule"]) if q("favorites") in ("1", "true"):  # 내 관심공고 일정만 (로그인)
                 return (lambda db, b: schedule.list_events(db, q("from") or None, q("to") or None,
                                                            user_id=user["user_id"])), True
@@ -191,8 +201,16 @@ window.close();</script>""")
 
     def handle_api(self, method, url):
         parts = [unquote(p) for p in url.path.strip("/").split("/")]
+        raw = method == "PUT" and len(parts) == 5 and parts[3] == "uploaded-criteria"  # 파일 그대로 받음
         try:
-            body = self.read_json() if method in ("POST", "PUT") else {}
+            if raw:
+                length = int(self.headers.get("Content-Length") or 0)
+                if length > uploaded_criteria.MAX_BYTES:
+                    self.send_json(400, {"error": "파일이 너무 큽니다 (최대 20MB)."})
+                    return
+                body = self.rfile.read(length)
+            else:
+                body = self.read_json() if method in ("POST", "PUT") else {}
         except ValueError:
             self.send_json(400, {"error": "JSON 형식이 아닙니다."})
             return
@@ -221,7 +239,7 @@ window.close();</script>""")
                 self.send_json(404, {"error": "찾을 수 없습니다."})
             else:
                 self.send_json(201 if method == "POST" and parts[1] == "companies" else 200, result)
-        except companies_api.InputError as exc:
+        except (companies_api.InputError, uploaded_criteria.UploadError) as exc:
             self.send_json(400, {"error": str(exc)})
         except (TypeError, ValueError, IndexError, KeyError) as exc:  # 입력값 형식 오류
             self.send_json(400, {"error": f"입력값을 확인하세요: {exc}"})

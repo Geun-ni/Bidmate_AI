@@ -66,14 +66,20 @@ def saved_documents(notice_no, kinds=("CRITERIA",), db_path=DEFAULT_DB_PATH):
 
 
 def llm_targets(db_path=DEFAULT_DB_PATH):
-    """적격심사기준을 받았는데 evaluation_rule 이 비어 있는 공고번호 (파서가 못 뽑음 → LLM으로 읽을 대상).
-    PDF 기준서, 기준서 금액 구간이 공고 추정가격과 안 맞는 경우, 공사용 기준서가 붙은 용역(zip 확인) 등.
-    extract_evaluation_rules --apply 를 돌린 뒤 기준이다."""
+    """LLM이 아직 처리할 공고번호 (extract_evaluation_rules --apply 를 돌린 뒤 기준).
+    = 기준서 본문 rule_extracted=0 (규칙 파서가 다 못 뽑음) 이면서
+      ① 배점 행이 없음 → 기준서 전체를 읽고 채움 (PDF·zip·구간 불일치·표 못 찾음 등)
+      ② 파서가 넣은 REVIEW 행이 남아 있음 → 그 행(parameters.설명, source_quote)만 읽고 고침
+    rule_extracted 는 '규칙으로 뽑았나'라서 LLM이 채운 뒤에도 0으로 남는다. LLM이 고친 행은 updated_by='LLM' 이라
+    ② 에서 빠지고, 행이 생기면 ① 에서도 빠져서 다시 부르지 않는다."""
     db = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
     targets = [r[0] for r in db.execute("""
         SELECT DISTINCT a.notice_no FROM bid_attachment a
-        WHERE a.doc_kind='CRITERIA' AND a.download_status='SUCCESS'
-          AND NOT EXISTS (SELECT 1 FROM evaluation_rule e WHERE e.notice_no=a.notice_no)
+        JOIN bid_document_content c ON c.attachment_id = a.id
+        WHERE a.doc_kind='CRITERIA' AND c.rule_extracted = 0
+          AND (NOT EXISTS (SELECT 1 FROM evaluation_rule e WHERE e.notice_no = a.notice_no)
+               OR EXISTS (SELECT 1 FROM evaluation_rule e WHERE e.notice_no = a.notice_no
+                          AND e.updated_by = 'PARSER' AND e.verification_status = 'REVIEW'))
         ORDER BY a.notice_no""")]
     db.close()
     return targets

@@ -388,6 +388,13 @@ def collect_srm(db, srm, notice_no, found_kinds):
     return found_kinds
 
 
+def invalidate_edited_rules(db, notice_no):
+    """정정으로 첨부(기준서)가 바뀐 공고: LLM·사용자가 옛 기준서로 넣은 배점 행을 지운다.
+    지우지 않으면 파서가 이 공고를 '고친 공고'로 보고 건드리지 않아 옛 배점이 계속 쓰인다.
+    바로 뒤 refresh_evaluation_rules 가 새 기준서로 다시 뽑고, 못 뽑으면 rule_extracted=0 → 다시 LLM 대상. → 지운 행 수"""
+    return db.execute("DELETE FROM evaluation_rule WHERE notice_no=? AND updated_by <> 'PARSER'", (notice_no,)).rowcount
+
+
 def process_notice(db, srm, row):
     notice_no = row["no"]
     started = now()
@@ -413,6 +420,7 @@ def process_notice(db, srm, row):
         if old_version and attachment_version(db, notice_no) != old_version:
             db.execute("UPDATE notice_analysis_cache SET analysis_status='INVALIDATED', invalidated_at=? "
                        "WHERE notice_no=? AND analysis_status <> 'INVALIDATED'", (now(), notice_no))
+            invalidate_edited_rules(db, notice_no)
         db.execute("UPDATE bid_notice SET needs_recollect=0, recollect_reason=NULL, last_collected_at=? "
                    "WHERE notice_no=?", (now(), notice_no))
         db.commit()
@@ -569,6 +577,7 @@ def main():
         print(f"  목록 조회 실패 (마지막 반영 시점을 옮기지 않음): {err}")
 
     processed, completed, failed, reason, revision_changed = 0, 0, 0, "완료", []
+    rule_checked, rule_ok = 0, 0  # 배점 규칙 추출 성공률 (새 문장 표현이 나오면 떨어진다)
     srm, blocks, streak, last_block_at = None, 0, 0, -100
     targets, pending = [], 0
     try:
@@ -618,6 +627,12 @@ def main():
             done = is_done(db, row["no"])
             completed += done
             failed += not done
+            flag = db.execute("""SELECT min(c.rule_extracted) FROM bid_document_content c JOIN bid_attachment a
+                                 ON a.id = c.attachment_id WHERE a.notice_no=? AND a.doc_kind='CRITERIA'""",
+                              (row["no"],)).fetchone()[0]
+            if flag is not None:
+                rule_checked += 1
+                rule_ok += flag
             print(f"  [{processed}/{len(targets)}] {row['no']} {'완료' if done else '실패·부분'} "
                   f"공고문={'O' if 'NOTICE' in found else 'X'} 적격심사기준={'O' if 'CRITERIA' in found else 'X'}",
                   flush=True)
@@ -636,8 +651,10 @@ def main():
                                (datetime.now().strftime("%Y-%m-%d %H:%M:%S"),)).fetchone()[0]
         unprocessed = pending - processed  # 한도·차단·중단으로 이번에 못 한 공고 (다음 실행에서 이어서)
         db.execute("""UPDATE collect_run SET finished_at=?, target_count=?, processed_count=?, stopped_reason=?,
-                      completed_count=?, deferred_count=?, failed_count=? WHERE id=?""",
-                   (now(), len(targets), processed, reason, completed, unprocessed, failed, run_id))
+                      completed_count=?, deferred_count=?, failed_count=?, rule_checked_count=?, rule_extracted_count=?
+                      WHERE id=?""",
+                   (now(), len(targets), processed, reason, completed, unprocessed, failed, rule_checked, rule_ok,
+                    run_id))
         db.commit()
         open_done = sum(is_done(db, n) for (n,) in db.execute(
             "SELECT notice_no FROM bid_notice WHERE company_id_src='COM01' AND purchase_type='ConstructionService' "
@@ -647,6 +664,8 @@ def main():
         print(f"결과: 신규 {len(changes[NEW])}건, 기본정보 갱신 {len(changes[UPDATED])}건, 정정·첨부변경 "
               f"{len(changes[CORRECTED])}건, 상세 완료 {completed}건, 실패·부분 {failed}건, 미처리 {unprocessed}건 "
               f"/ 진행 중 공고 {remaining}건 중 상세 완료 {open_done}건 (collect_run id={run_id}, {reason})")
+        if rule_checked:
+            print(f"배점 규칙 추출: {rule_checked}건 중 {rule_ok}건 성공 ({rule_ok / rule_checked:.0%})")
 
 
 if __name__ == "__main__":
