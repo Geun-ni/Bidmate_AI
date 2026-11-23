@@ -19,6 +19,8 @@
     FIXED → true/false (필수장비는 보유 장비 이름 목록)
     세부 표가 없는 GROUP → 직접 점수 (배점 범위 안으로 자름)
 """
+import math
+
 from backend import notices_api
 
 UNCALC = "미산정"      # 입력이 없음
@@ -90,13 +92,20 @@ def _leaf(node, inputs, ctx):
         raw = float(value) / (base * p["multiplier"]) * p["points"]
         return _result(node, _round(min(raw, p["cap"]), node["rounding"]), base_amount=base)
     if rt == "FORMULA" and "per_unit" in p and ik != "bonus_count":  # 인원당 점수
-        if value is None:
+        sp, sp_value = p.get("special"), inputs.get(key + "_special")  # 'OF전기원은 1인 3.0점'처럼 따로 세는 인원
+        if value is None and sp_value is None:
             return _result(node, None, UNCALC)
-        return _result(node, _round(min(float(value) * p["per_unit"], p["cap"]), node["rounding"]))
+        raw = float(value or 0) * p["per_unit"] + (float(sp_value or 0) * sp["per_unit"] if sp else 0)
+        return _result(node, _round(min(raw, p["cap"]), node["rounding"]))
     if rt == "FORMULA" and ik == "engineer_days":
         if value is None:
             return _result(node, None, UNCALC)
-        return _result(node, _round(min(p["cap"] * float(value) / p["days"], p["cap"]), node["rounding"]))
+        score = min(p["cap"] * float(value) / p["days"], p["cap"])
+        short = p.get("short_tenure")
+        if short and inputs.get(key + "_short"):  # 재직 기간이 짧으면 평가점수의 일부만 인정
+            return _result(node, _round(score * short["ratio"], node["rounding"]),
+                           note=f"재직 {short['days']}일 미만 → {short['ratio']:.0%} 인정")
+        return _result(node, _round(score, node["rounding"]))
     if rt == "FORMULA" and ik == "pq_score":  # 사업수행능력: 평가점수/100 × 배점
         if value is None:
             return _result(node, None, UNCALC)
@@ -107,8 +116,37 @@ def _leaf(node, inputs, ctx):
     if rt == "FORMULA" and ik == "bonus_count":  # 감리 가점·감점: 건수 × 건당 점수, 최대점
         if value is None:
             return _result(node, None, UNCALC)
-        score = min(float(value) * p["per_unit"], abs(p["limit"])) * p["sign"]
+        count = float(value)
+        if p.get("period"):  # 'N월마다 X점씩': 입력은 기간(월), N월 단위로 센다 ('N월 미만은 N월로' 이면 올림)
+            count = math.floor(count / p["period"])
+            if p.get("round_up") and float(value) > 0 and count == 0:
+                count = 1
+        score = min(count * p["per_unit"], abs(p["limit"])) * p["sign"]
         return _result(node, round(score, 4))
+    if rt == "FORMULA" and ik == "bonus_ratio":  # 교육훈련: Σ (이수인원 / 평가대상인원) × 점수, 최대점
+        total = inputs.get(key + "_total")
+        counts = [inputs.get(f"{key}_{i}") for i in range(len(p["terms"]))]
+        if not total or all(c is None for c in counts):
+            return _result(node, None, UNCALC, f"{p['denominator']}와 {p['numerator']} 입력 필요")
+        raw = sum(float(c or 0) / float(total) * t["points"] for c, t in zip(counts, p["terms"]))
+        return _result(node, round(min(raw, p["limit"]) * p["sign"], 4))
+    if rt == "FORMULA" and ik == "tech_dev":  # 개발실적: 건마다 건당 점수 × 경과기간 비율 (÷ 출원자 수), 최대점
+        if value is None:
+            return _result(node, None, UNCALC)
+        total = 0.0
+        for it in value:  # [{kind: 종류 번호, years: 경과 연수, inventors: 출원자 수, non_field: 배전분야 아님}]
+            kind = p["kinds"][int(it["kind"])]
+            band = next((i for i, b in enumerate(p["age_bounds"]) if float(it["years"]) <= b), None)
+            pct = kind["age_pct"][band] if band is not None and band < len(kind["age_pct"]) else None
+            if pct is None:
+                continue  # 원문 표에 없는 연수('-' 또는 칸 없음)는 인정 안 함
+            pts = kind["per_unit"] * pct
+            if it.get("non_field") and p.get("non_field_ratio"):
+                pts *= p["non_field_ratio"]
+            if p.get("split_by_inventors"):
+                pts /= max(int(it.get("inventors") or 1), 1)
+            total += pts
+        return _result(node, round(min(total, p["limit"]), 4))
     if rt == "FIXED" and "items" in p:  # 필수장비: 보유 장비 이름 목록
         if value is None:
             return _result(node, None, UNCALC)
@@ -244,11 +282,15 @@ def _price(node, inputs, ctx):
     return _result(node, round(score, 4), note=note, ratio=ratio, a_amount=a if p.get("subtract_a") else None)
 
 
-def calculate(db, notice_no, inputs):
-    """→ {status, total, pass_score, gap, items:[…]} 또는 None(공고 없음)"""
+def calculate(db, notice_no, inputs, company_id=None):
+    """→ {status, total, pass_score, gap, items:[…]} 또는 None(공고 없음).
+    company_id: 공용 배점이 없을 때 그 업체가 올린 기준서(company_uploaded_criteria) 배점을 쓴다 (권한 확인은 호출자)."""
     ev = notices_api.get_evaluation(db, notice_no)
     if ev is None:
         return None
+    if not ev["rules"] and company_id:
+        from backend import uploaded_criteria
+        ev = uploaded_criteria.evaluation(db, company_id, notice_no) or ev
     if not ev["rules"]:
         return {"notice_no": notice_no, "status": HOLD, "reason": ev["reason"], "total": None, "items": []}
     a = db.execute("SELECT a_amount FROM bid_notice WHERE notice_no=?", (notice_no,)).fetchone()

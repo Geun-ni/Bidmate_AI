@@ -908,9 +908,15 @@ def experience_items(lines, start, end, limit):
             continue
         per = re.search(r"1\s*인당\s*(\d+(?:\.\d+)?)\s*점", line)
         if per and heading and not any(i["name"] == heading["name"] for i in items):
+            params = {"per_unit": float(per.group(1)), "unit": "인", "cap": heading["cap"]}
+            formula = f"인원 × {params['per_unit']:g}"
+            # '(단, OF전기원은 1인 양성 시 3.0점)' → 따로 세는 인원의 1인당 점수
+            sp = re.search(r"단\s*,?\s*(\S+?)(?:은|는)\s*1\s*인\s*\S*\s*시\s*(\d+(?:\.\d+)?)\s*점", line)
+            if sp:
+                params["special"] = {"name": sp.group(1), "per_unit": float(sp.group(2))}
+                formula += f" + {sp.group(1)} 인원 × {float(sp.group(2)):g}"
             items.append({"name": heading["name"], "cap": heading["cap"], "bonus": False,
-                          "formula": f"min(인원 × {float(per.group(1)):g}, {heading['cap']:g})",
-                          "params": {"per_unit": float(per.group(1)), "unit": "인", "cap": heading["cap"]},
+                          "formula": f"min({formula}, {heading['cap']:g})", "params": params,
                           "quote": line.strip()[:300]})
     items += other_experience_items(sec, items)
     return items, (ORDINAL[rd.group(1)] - 1 if rd else None), amounts
@@ -948,9 +954,21 @@ def other_experience_items(sec, found):
                         "params": {"items": [{"name": n, "score": float(v)} for n, v in pairs]}})
         elif re.search(r"365\s*(?:TIMES|×)\s*(\d+)\s*년", near):  # '(배점) × A / (365 × 3년)'
             years = int(re.search(r"365\s*(?:TIMES|×)\s*(\d+)\s*년", near).group(1))
+            params = {"A": "동종공사 시공참여 경력(근무일수)", "days": 365 * years, "cap": cap}
+            body = []  # 이 항목 본문 (다음 항목 제목 전까지)
+            for l in sec[k + 1:]:
+                if OTHER_HEAD.match(l):
+                    break
+                body.append(l)
+            # '입찰공고일까지 계속하여 6개월(180일) 이상 재직하지 아니한 자에 대해서는 평가점수의 80%만 인정'
+            ten = re.search(r"(\d+)\s*일\s*\)?\s*이상\s*재직하지\s*(?:아니한|않은)\s*자[^%]*?(\d+)\s*%\s*만?\s*인정",
+                            " ".join(body))
+            if ten:
+                params["short_tenure"] = {"days": int(ten.group(1)), "ratio": int(ten.group(2)) / 100}
             out.append({**base, "rule_type": "FORMULA", "input_key": "engineer_days",
-                        "formula": f"min({cap:g} × 경력일수 / (365 × {years}), {cap:g})",
-                        "params": {"A": "동종공사 시공참여 경력(근무일수)", "days": 365 * years, "cap": cap}})
+                        "formula": f"min({cap:g} × 경력일수 / (365 × {years}), {cap:g})"
+                                   + (f" × ({ten.group(2)}% if 재직 {ten.group(1)}일 미만)" if ten else ""),
+                        "params": params})
         elif "숙지도" in name:  # 표 없이 '광역시·도에 본점이 있으면 배점'
             out.append({**base, "rule_type": "FIXED", "input_key": "office_location", "category": "OFFICE",
                         "params": {"score": cap, "condition": "공사현장이 속한 광역시·특별시·특별자치도·도에 본점 소재"}})
@@ -1033,7 +1051,7 @@ def bonus_tables(lines, price, gosi, special):
             out += detail_item_table(lines, s, e)  # 용역 '심사항목 | 세부항목 | 배점 | 비고'
             continue
         if "세부평가방법" in compact(head):
-            out += method_table(lines, s, e)  # 감리 '평가항목 | 평가요소 | 세부평가방법' 의 가점·감점 행
+            out += method_table(lines, s, e, price)  # 감리 '평가항목 | 평가요소 | 세부평가방법' 의 가점·감점 행
             continue
         if not (re.search(r"등\s*급", head) and re.search(r"평\s*점|배\s*점", head)) or "신용" in head:
             continue
@@ -1084,12 +1102,136 @@ def detail_item_table(lines, s, e):
         nums = re.findall(SIGNED + r"|\d+(?:\.\d+)?", score_cell)
         if not nums or not name:
             continue
-        groups.setdefault(name, []).append({"grade": grade.split(" / ")[0].strip()[:200], "score": to_num(nums[0])})
+        parts = [g.strip() for g in grade.split(" / ")]
+        subs = [g.lstrip("·• ").strip() for g in parts[1:] if g[:1] in "·•"]
+        if subs and len(nums) == len(subs) + 1:  # '여성기업으로서 그 존속기간에 따라 / · 3년 이상 / · 3년 미만 | 0.5 / (0.5) / (0.25)'
+            for sub, n in zip(subs, nums[1:]):
+                groups.setdefault(name, []).append({"grade": f"{parts[0][:180]} ({sub})", "score": to_num(n)})
+            continue
+        groups.setdefault(name, []).append({"grade": parts[0][:200], "score": to_num(nums[0])})
     return [{"group": "신인도", "name": n, "condition": "", "rows": r, "scale": None,
              "quote": "\n".join(lines[s:s + 3])[:300]} for n, r in groups.items()]
 
 
-def method_table(lines, s, e):
+AMOUNT_UNIT = {"천만": 10_000_000, "억": 100_000_000}
+
+
+def period_rules(text):
+    """'○ 감리업체가 … 합산기간 1월마다 0.1점씩 감점하되 최대 0.8점까지 감점. (1월 미만인 경우 1월로 계산)'
+    → 대상(문장 주어)별 [{subject, period, unit, per_unit, limit, round_up}]. 문장마다 규칙이 다 있어야 돌려준다."""
+    out = []
+    for clause in [c for c in re.split(r"○", text) if c.strip(" /")]:
+        m = re.search(r"(\d+)\s*(월|개월|년)\s*마다\s*(\d+(?:\.\d+)?)\s*점씩", clause)
+        cap = re.search(r"최대\s*(\d+(?:\.\d+)?)\s*점", clause)
+        if not (m and cap):
+            return None
+        subject = re.match(r"\s*(\S+?)(?:이|가)\s", clause)
+        out.append({"subject": subject.group(1) if subject else None, "period": int(m.group(1)), "unit": m.group(2),
+                    "per_unit": float(m.group(3)), "limit": float(cap.group(1)),
+                    "round_up": bool(re.search(rf"{m.group(1)}\s*{m.group(2)}\s*미만인\s*경우\s*{m.group(1)}\s*{m.group(2)}로", clause))})
+    return out or None
+
+
+def ratio_terms(text):
+    """'(1) 전기감리 일반교육 / - 1주(5일)이상 교육을 이수한 경우 : (교육이수인원 / 평가대상인원수) × 0.2점'
+    → {numerator, denominator, terms:[{label, points}]} (같은 분모의 비율 × 점수 항목이 2개 이상일 때)"""
+    terms, section, num = [], None, None
+    for part in text.split(" / - "):
+        sec = re.findall(r"\(\d\)\s*([^/()]+?)\s*$", part)  # 다음 항목 앞의 소제목 '(2) 배전감리 전문교육'
+        m = re.search(r"^\s*(?:-\s*)?(.+?)\s*:\s*\(\s*([^()/]+?)\s*/\s*([^()]+?)\s*\)\s*×\s*(\d+(?:\.\d+)?)\s*점", part)
+        if m:
+            label = re.sub(r"\s*교육을\s*이수한\s*경우", "", m.group(1)).strip()
+            terms.append({"label": f"{section} {label}" if section else label, "points": float(m.group(4))})
+            num = num or (m.group(2).strip(), m.group(3).strip())
+        if sec:
+            section = sec[-1].strip()
+    if len(terms) < 2:
+        return None
+    return {"numerator": num[0], "denominator": num[1], "terms": terms}
+
+
+def grade_point_rows(text):
+    """'구 분 / 배 점 / 적용대상 자격증 / 기술사 / 0.2점 / 건축전기설비, 발송배전 / 기능장 / 0.16점 / …'
+    → [{grade, score}]. 'N점' 칸 앞 칸이 등급, 뒤 칸들이 적용대상. '적용대상 이외 … 적용배점의 50%' 문장이 있으면
+    등급마다 '그 외 자격증' 행을 덧붙인다."""
+    body = re.split(r"적용대상\s*자격증\s*/", text, maxsplit=1)
+    if len(body) < 2:
+        return None
+    toks = [t.strip() for t in body[1].split(" / ")]
+    idx = [i for i, t in enumerate(toks) if re.fullmatch(r"\d+(?:\.\d+)?\s*점", t)]
+    if len(idx) < 2 or idx[0] == 0:
+        return None
+    rows = []
+    for n, i in enumerate(idx):
+        end = idx[n + 1] - 1 if n + 1 < len(idx) else len(toks)
+        targets = []
+        for t in toks[i + 1:end]:
+            if t.startswith("※"):
+                break
+            targets.append(t)
+        rows.append({"grade": f"{toks[i - 1]} ({' '.join(targets).strip(', ')})",
+                     "score": float(re.match(r"\d+(?:\.\d+)?", toks[i]).group()), "name": toks[i - 1]})
+    other = re.search(r"적용대상\s*자격증\s*이외의?\s*전기관련\s*자격증\s*(\(\s*산업기사\s*이상\s*\))?\s*(?:은|는)\s*"
+                      r"적용배점의\s*(\d+)\s*%", text)
+    if other:
+        # '산업기사 이상'(명시가 없어도 같은 뜻): 표의 산업기사 행까지만 (그 아래 OA 산업기사 등은 전기 자격이 아님)
+        upto = next((n for n, r in enumerate(rows) if compact(r["name"]) == "산업기사"), None)
+        base = rows[:upto + 1] if upto is not None else rows
+        ratio = int(other.group(2)) / 100
+        rows += [{"grade": f"{r['name']} (적용대상 외 전기관련 자격증, {other.group(2)}%)",
+                  "score": round(r["score"] * ratio, 4), "name": r["name"]} for r in base]
+    return [{"grade": r["grade"], "score": r["score"]} for r in rows]
+
+
+def amount_band_rows(text, price):
+    """'부실벌점 / 배 점 / 3천만원미만 / 3천만원이상 / 1억원미만 / 1억원이상 / 고시금액미만 / 2점 초과 5점 이하 / 0.04 / 0.08 / 0.12 / …'
+    → 추정가격이 들어가는 용역금액 구간 열의 [{grade, score}]. 구간 경계(3천만·4천만·1억)는 표 머리에서 읽는다."""
+    bounds = []
+    for v, u in re.findall(r"(\d+)\s*(천만|억)\s*원\s*미만", text):
+        amt = int(v) * AMOUNT_UNIT[u]
+        if amt not in bounds:
+            bounds.append(amt)
+    rows = re.findall(r"(\d+(?:\.\d+)?\s*점\s*초과(?:\s*\d+(?:\.\d+)?\s*점\s*이하)?)\s*/\s*(\d+(?:\.\d+)?)\s*/\s*"
+                      r"(\d+(?:\.\d+)?)\s*/\s*(\d+(?:\.\d+)?)", text)
+    if len(bounds) != 2 or len(rows) < 2 or price is None or not re.search(r"고시금액\s*미만", text):
+        return None
+    col = 0 if price < bounds[0] else 1 if price < bounds[1] else 2
+    return [{"grade": r[0], "score": float(r[col + 1])} for r in rows]
+
+
+def tech_dev_rule(text):
+    """감리 개발실적: '- 전력기술에 관한 특허 : 건당 0.2점' + 경과기간 표('구 분 / 5년이하 / 5년초과 10년이하 / … / 특 허 / 100% / 80% / 60%')
+    + '최대 0.4점' (+ '배전분야가 아닌 … 배점의 50%', '출원자의 수로 나누어')"""
+    kinds = re.findall(r"-\s*([^:/]+?)\s*:\s*건당\s*(\d+(?:\.\d+)?)\s*점", text)
+    cap = re.search(r"최대\s*(\d+(?:\.\d+)?)\s*점", text)
+    head = re.search(r"구\s*분\s*/\s*((?:\d+\s*년\s*(?:초과|이하)[^/]*/\s*)+)", text)
+    if len(kinds) < 2 or not cap or not head:
+        return None
+    ages = [int(x) for x in re.findall(r"(\d+)\s*년\s*이하", head.group(1))]
+    tail = text[head.end():].split(" / ")
+    table = {}
+    for n, t in enumerate(tail):
+        if re.fullmatch(r"[가-힣 ]+", t.strip()) and n + 1 < len(tail) and re.fullmatch(r"\d+\s*%|-", tail[n + 1].strip()):
+            vals = []
+            for v in tail[n + 1:n + 1 + len(ages)]:
+                v = v.strip()
+                if not re.fullmatch(r"\d+\s*%|-", v):
+                    break
+                vals.append(None if v == "-" else int(v.rstrip("% ")) / 100)
+            table[compact(t)] = vals
+    out = []
+    for name, pts in kinds:
+        row = next((v for k, v in table.items() if k in compact(name)), None)
+        if row is None:
+            return None
+        out.append({"name": name.strip(), "per_unit": float(pts), "age_pct": row})
+    other = re.search(r"배전분야가\s*아닌.*?배점의\s*(\d+)\s*%", text)
+    return {"kinds": out, "age_bounds": ages, "limit": float(cap.group(1)),
+            "non_field_ratio": int(other.group(1)) / 100 if other else None,
+            "split_by_inventors": bool(re.search(r"출원자의?\s*수로\s*나누어", text))}
+
+
+def method_table(lines, s, e, price=None):
     """감리 PQ 표의 '마. 가점 감점' 행들 → 항목별 규칙 (건당·기간당 점수, 최대 점수).
     예: '(6)부정당 업체 | … 합산기간 1월마다 0.1점씩 감점하되 최대 0.8점까지 감점'"""
     out, inside = [], False
@@ -1097,7 +1239,7 @@ def method_table(lines, s, e):
         cells = split_cells(raw)
         if len(cells) >= 3:
             inside = bool(re.search(r"가점|감점", compact(cells[0])))
-            name_cell, text = cells[1], cells[2]
+            name_cell, text = cells[1], cells[-1]  # '가점 / (1) | 책임 감리원 자격보유 | [1또는2] | 설명' → 설명은 끝 칸
         elif len(cells) == 2 and inside:
             name_cell, text = cells[0], cells[1]
         else:
@@ -1106,13 +1248,47 @@ def method_table(lines, s, e):
             continue
         name = clean_label(re.sub(r"^\(\d\)\s*", "", name_cell.replace(" / ", "")))
         minus = "감점" in text and "가점" not in text
+        base = {"group": "가점/감점", "condition": text[:300], "scale": None, "quote": raw[:300]}
+        sign = -1 if minus else 1
+        periods = period_rules(text)
+        if periods:  # 대상별 기간당 점수 (업체 1월마다, 감리원 3월마다 …)
+            for p in periods:
+                label = f"{name} ({p['subject']})" if len(periods) > 1 and p["subject"] else name
+                out.append({**base, "name": label, "rows": [{"grade": "최대", "score": sign * p["limit"]}],
+                            "rule": {"per_unit": p["per_unit"], "sign": sign, "설명": text[:300],
+                                     "period": p["period"], "period_unit": p["unit"], "round_up": p["round_up"]}})
+            continue
+        ratio = ratio_terms(text)
+        cap_m = re.search(r"최대\s*(\d+(?:\.\d+)?)\s*점", text)
+        if ratio and cap_m:  # 교육훈련: (이수인원 / 평가대상인원) × 점수 합, 최대 N점
+            out.append({**base, "name": name, "ratio": {**ratio, "limit": float(cap_m.group(1)), "sign": sign}})
+            continue
+        dev = tech_dev_rule(text)
+        if dev:  # 개발실적: 건당 점수 × 경과기간 비율
+            out.append({**base, "name": name, "tech_dev": dev})
+            continue
+        grades = grade_point_rows(text) or amount_band_rows(text, price)
+        if grades:  # 자격증별 점수 표, 용역금액 구간별 부실벌점 표 → 등급표
+            out.append({**base, "name": name, "rows": [{"grade": g["grade"], "score": sign * g["score"]} for g in grades]})
+            continue
         caps = re.findall(r"최대\s*(\d+(?:\.\d+)?)\s*점", text)
         per = re.search(r"(\d+(?:\.\d+)?)\s*점씩", text)
         cap = sum(float(c) for c in caps) if caps else None
         if len(caps) > 1:
             per = None  # 업체·감리원 등 규칙이 여러 개 섞인 행 → 원문 확인
+        band_caps = None
+        if cap is None:  # '최대 N점' 문장이 없고 점수가 표 안에만 있는 항목 (부실벌점·자격보유)
+            cols = re.findall(r"(?:초과|이하|미만|이상)\s*/\s*(\d+(?:\.\d+)?)\s*/\s*(\d+(?:\.\d+)?)\s*/\s*(\d+(?:\.\d+)?)", text)
+            if cols and re.search(r"4천만원\s*미만", text):  # 용역금액 구간 3열 (4천만원 미만 → 1억원~고시금액)
+                band_caps = [max(float(c[i]) for c in cols) for i in range(3)]
+            elif not re.search(r"\d천만원\s*미만", text):  # 다른 금액 구간표(예: 3천만원)는 구간을 추측하지 않고 REVIEW 로 둔다
+                # 자격증별 점수 표 ('기술사 / 0.2점 / …'). '25점 초과'처럼 구간 경계에 붙은 숫자는 점수가 아님
+                pts = [float(x) for x in re.findall(r"(\d+(?:\.\d+)?)\s*점(?!\s*(?:초과|이하|미만|이상))", text)]
+                cap = max(pts) if pts else None
         rule = {"per_unit": float(per.group(1)) if per else None, "sign": -1 if minus else 1,
                 "설명": text[:300]}
+        if band_caps:
+            rule["band_caps"] = band_caps
         out.append({"group": "가점/감점", "name": name or "가점/감점", "condition": text[:300],
                     "rows": [{"grade": "최대", "score": (-cap if minus else cap) if cap is not None else 0.0}],
                     "rule": rule, "scale": None, "quote": raw[:300]})
@@ -1430,15 +1606,22 @@ def pq_details(text, price, srm_amount=None):
     return out, issues
 
 
-def extract_notice(db, notice_no):
+# 항목 하나만 못 읽은 문제 (나머지 배점 행은 믿을 수 있음 → 행을 남기고 그 행만 REVIEW)
+ITEM_ONLY_ISSUE = re.compile(r"계산 방법은 원문 확인 필요|기준비율 값이 문서에 없음")
+
+
+def extract_notice(db, notice_no, docs=None):
+    """docs: [(attachment_id, sha256, 본문, 확장자)] — 주지 않으면 수집한 적격심사기준 본문을 쓴다.
+    업체가 직접 올린 기준서는 attachment_id=None 으로 넘긴다 (company_uploaded_criteria)."""
     notice = db.execute("SELECT title, presumed_price, item_type, notice_date FROM bid_notice WHERE notice_no=?",
                         (notice_no,)).fetchone()
     title, price, item_type, notice_date = notice
-    docs = db.execute("""
-        SELECT a.id, a.sha256, c.text, a.file_ext FROM bid_attachment a
-        JOIN bid_document_content c ON c.attachment_id = a.id
-        WHERE a.notice_no=? AND a.doc_kind='CRITERIA' AND c.read_status='SUCCESS' ORDER BY a.id""",
-                      (notice_no,)).fetchall()
+    if docs is None:
+        docs = db.execute("""
+            SELECT a.id, a.sha256, c.text, a.file_ext FROM bid_attachment a
+            JOIN bid_document_content c ON c.attachment_id = a.id
+            WHERE a.notice_no=? AND a.doc_kind='CRITERIA' AND c.read_status='SUCCESS' ORDER BY a.id""",
+                          (notice_no,)).fetchall()
     special = item_type == "Construction" and is_special(db, notice_no, title)
     result = {"notice_no": notice_no, "title": title, "presumed_price": price, "issues": [], "rows": []}
     chosen = None
@@ -1457,6 +1640,7 @@ def extract_notice(db, notice_no):
     if not chosen:
         if not docs:
             result["issues"].append("읽은 적격심사기준 없음")
+        result["rule_extracted"] = False if docs else None  # 기준서가 아예 없으면 판단 대상 아님
         return result
     aid, sha, text, lines, table = chosen
     result["issues"] = []
@@ -1675,31 +1859,60 @@ def extract_notice(db, notice_no):
                             source_location="[별표 1] 배점표 > 신인도 등급", source_quote=r["source_quote"])
         if not found and not in_table:
             result["detail_issues"].append("신인도 세부 표 못 찾음")
+        # 감리 가점·감점 항목이 표 2개에 같은 이름으로 나오면(배점표·세부표 양식이 섞인 공고) 어느 쪽인지 몰라 REVIEW
+        names = [compact(b["name"]) for b in found if b["group"] == "가점/감점"]
+        dup = {n for n in names if names.count(n) > 1}
+        for n in sorted(dup):
+            result["detail_issues"].append(f"가점/감점 '{n[:15]}' 계산 방법은 원문 확인 필요 (같은 항목이 표 2개에 있음)")
         for b in found:
             parent = bonus_parent(rows, b["group"])
             if parent is None:
                 continue
-            params = {"group": b["group"][:100], "condition": b["condition"], "rows": add_grade_bounds(b["rows"])}
-            params.update(grade_input(params["rows"]))
+            st = "REVIEW" if b["group"] == "가점/감점" and compact(b["name"]) in dup else "UNVERIFIED"
+            params = {"group": b["group"][:100], "condition": b["condition"], "rows": add_grade_bounds(b["rows"]) if b.get("rows") else []}
+            params.update(grade_input(params["rows"]) if params["rows"] else {})
             if b["scale"]:
                 params["scale"] = {"numerator": b["scale"][0], "denominator": b["scale"][1]}
+            if b.get("ratio"):  # 감리 교육훈련: Σ (이수인원 / 평가대상인원) × 점수, 최대 N점
+                r = b["ratio"]
+                terms = " + ".join(f"({t['label']} {r['numerator']} / {r['denominator']}) × {t['points']:g}"
+                                   for t in r["terms"])
+                add(parent=parent, category="BONUS", item_name=b["name"], rule_type="FORMULA",
+                    max_score=r["sign"] * r["limit"], formula=f"min({terms}, {r['limit']:g})", formula_source="TEXT",
+                    parameters={"group": b["group"], **r, "설명": b["condition"]}, input_key="bonus_ratio",
+                    verification_status=st, source_location="[별표 2] 신인도", source_quote=b["quote"])
+                continue
+            if b.get("tech_dev"):  # 감리 개발실적: Σ 건당 점수 × 경과기간 비율 (÷ 출원자 수), 최대 N점
+                d = b["tech_dev"]
+                add(parent=parent, category="BONUS", item_name=b["name"], rule_type="FORMULA", max_score=d["limit"],
+                    formula=f"min(Σ 건당 점수 × 경과기간 비율{' ÷ 출원자 수' if d['split_by_inventors'] else ''}, "
+                            f"{d['limit']:g})", formula_source="TEXT",
+                    parameters={"group": b["group"], **d, "설명": b["condition"]}, input_key="tech_dev",
+                    verification_status=st, source_location="[별표 2] 신인도", source_quote=b["quote"])
+                continue
             if b.get("rule"):  # 감리: 건당·기간당 점수 + 최대 점수 (규칙 문장)
                 rule = b["rule"]
                 limit = b["rows"][0]["score"]
+                if not limit and rule.get("band_caps") and pq_band(price) is not None:  # 표 안 구간별 최대 점수
+                    limit = rule["sign"] * rule["band_caps"][pq_band(price)]
                 params = {"group": b["group"], "per_unit": rule["per_unit"], "sign": rule["sign"],
                           "limit": limit, "설명": rule["설명"]}
+                unit = "건수"
+                if rule.get("period"):  # 'N월마다 X점씩' → 기간(월)을 입력받아 N월 단위로 센다
+                    params.update(period=rule["period"], period_unit=rule["period_unit"], round_up=rule["round_up"])
+                    unit = f"(기간 ÷ {rule['period']}{rule['period_unit']})"
                 ok = rule["per_unit"] is not None and limit
                 if not ok:
                     result["detail_issues"].append(f"가점/감점 '{b['name'][:15]}' 계산 방법은 원문 확인 필요")
                 add(parent=parent, category="BONUS", item_name=b["name"], rule_type="FORMULA" if ok else "GROUP",
-                    max_score=limit, formula=(f"{'-' if rule['sign'] < 0 else ''}min(건수 × {rule['per_unit']:g}, "
+                    max_score=limit, formula=(f"{'-' if rule['sign'] < 0 else ''}min({unit} × {rule['per_unit']:g}, "
                                               f"{abs(limit):g})") if ok else None,
                     formula_source="TEXT" if ok else None, parameters=params,
-                    input_key="bonus_count" if ok else None, verification_status="UNVERIFIED" if ok else "REVIEW",
+                    input_key="bonus_count" if ok else None, verification_status=st if ok else "REVIEW",
                     source_location="[별표 2] 신인도", source_quote=b["quote"])
                 continue
             add(parent=parent, category="BONUS", item_name=b["name"], rule_type="TABLE",
-                max_score=None, parameters=params, input_key="bonus_grade",
+                max_score=None, parameters=params, input_key="bonus_grade", verification_status=st,
                 source_location="[별표 2] 신인도", source_quote=b["quote"])
 
     # 3-5) 2단계 세부 표: 감리 PQ (참여감리원·유사용역수행실적·신용도·업무중첩도, [별표 12] 세부평가기준)
@@ -1766,9 +1979,13 @@ def extract_notice(db, notice_no):
                 result["issues"].append(f"'{g['item_name']}' 하위 합계 {s:g} ≠ {g['max_score']:g}")
     if not groups:
         result["issues"].append("수행능력 묶음 못 찾음")
-    if result["issues"]:
-        for r in rows:
-            r["verification_status"] = "REVIEW"
+    # 규칙 추출 결과 표시 (팀 결정 2026-11-22). 문제가 하나라도 있으면 본문 rule_extracted=0 → LLM 대상.
+    #  - 항목 하나만 못 읽은 경우(계산 방법이 문장뿐, 기준비율 값 없음): 행은 남기고 그 행만 REVIEW → LLM은 REVIEW 행만 읽음
+    #  - 배점표·세부 표 자체를 못 믿는 경우(PDF·구간 불일치·합계 안 맞음·표 못 찾음): 배점 행을 비움 → LLM이 기준서 전체를 읽음
+    problems = result["issues"] + result["detail_issues"]
+    result["rule_extracted"] = not problems
+    if result["issues"] or any(not ITEM_ONLY_ISSUE.search(p) for p in result["detail_issues"]):
+        result["rows"] = []
     return result
 
 
@@ -1785,6 +2002,10 @@ def insert(db, results, now, only_these=False):
         db.execute(f"DELETE FROM evaluation_rule WHERE updated_by='PARSER' {keep}")
     n = 0
     for res in results:
+        if res.get("rule_extracted") is not None:  # 기준서 본문에 규칙 추출 성공(1)·실패(0) 표시
+            db.execute("""UPDATE bid_document_content SET rule_extracted=? WHERE attachment_id IN
+                          (SELECT id FROM bid_attachment WHERE notice_no=? AND doc_kind='CRITERIA')""",
+                       (int(res["rule_extracted"]), res["notice_no"]))
         if res["notice_no"] in edited:
             continue  # LLM·사용자가 고친 공고는 건드리지 않는다
         ids = []

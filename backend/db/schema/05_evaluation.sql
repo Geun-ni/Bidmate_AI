@@ -61,6 +61,28 @@ CREATE TABLE IF NOT EXISTS evaluation_rule (
     UNIQUE (notice_no, position)
 );
 
+-- 업체가 직접 올린 적격심사기준 (zip 이거나 수집기가 기준서를 못 찾은 공고). 올린 업체만 쓴다 → 공용 evaluation_rule 은 안 건드림.
+-- 원본 파일은 저장하지 않고 전처리한 본문과 규칙 추출 결과(JSON)만 남긴다. 업체·공고당 1건 (다시 올리면 덮어씀)
+-- 공용 배점(evaluation_rule)이 없는 공고에서만 점수 계산에 쓴다
+CREATE TABLE IF NOT EXISTS company_uploaded_criteria (
+    company_id       TEXT NOT NULL REFERENCES company(company_id) ON DELETE CASCADE,
+    notice_no        TEXT NOT NULL REFERENCES bid_notice(notice_no) ON DELETE CASCADE,
+    filename         TEXT NOT NULL,
+    file_ext         TEXT,
+    size_bytes       INTEGER,
+    sha256           TEXT,
+    read_status      TEXT NOT NULL CHECK (read_status IN ('SUCCESS', 'FAILED')),
+    text             TEXT,                             -- 전처리한 본문 (bid_document_content.text 와 같은 형식)
+    error            TEXT,                             -- 본문을 못 읽은 이유
+    rule_extracted   INTEGER CHECK (rule_extracted IN (0, 1)),  -- 1 = 규칙으로 다 뽑음, 0 = 못 뽑음(LLM 대상)
+    rules            TEXT NOT NULL DEFAULT '[]',       -- JSON: evaluation_rule 행과 같은 모양의 목록 (parent = 목록 번호)
+    issues           TEXT NOT NULL DEFAULT '[]',       -- JSON: 규칙 추출에서 막힌 이유
+    rules_updated_by TEXT NOT NULL DEFAULT 'PARSER' CHECK (rules_updated_by IN ('PARSER', 'LLM', 'USER')),
+    uploaded_by      TEXT REFERENCES app_user(user_id) ON DELETE SET NULL,
+    uploaded_at      TEXT NOT NULL,
+    PRIMARY KEY (company_id, notice_no)
+);
+
 -- 업체의 점수 시뮬레이션 입력·결과 (입찰가격·예정가격은 사용자 입력). 업체·공고당 직전 1건만 (다시 하면 덮어씀)
 -- Q&A 봇이 '저번 시뮬레이션 결과'를 답할 때도 이 행을 쓴다 → 요청 사용자의 ACTIVE 소속 업체 행만 내준다
 CREATE TABLE IF NOT EXISTS company_evaluation_draft (
