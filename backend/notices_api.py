@@ -134,6 +134,11 @@ def get_evaluation(db, notice_no):
         reason = ("기준서를 자동으로 읽지 못함 — AI 분석 대기" if has_doc else
                   "적격심사기준을 아직 받지 못함" if notice["criteria_doc_found"] is None else "적격심사기준 없음")
         return {"notice_no": notice_no, "status": "확인 필요", "reason": reason, "summary": None, "rules": []}
+    return build_evaluation(notice_no, rows)
+
+
+def build_evaluation(notice_no, rows, source="수집 기준서"):
+    """evaluation_rule 행(또는 같은 모양의 dict) 목록 → 배점·산식 계층 구조"""
     nodes = {r["id"]: _rule_node(r) for r in rows}
     tree = []
     for r in rows:
@@ -147,6 +152,7 @@ def get_evaluation(db, notice_no):
         "performance_max": sum(n["max_score"] or 0 for n in tree if n["rule_type"] == "GROUP") or None,
         "review_count": review,
         "source_file": rows[0]["filename"],
+        "source": source,  # 수집 기준서 / 업체 업로드
         "extracted_at": max(r["updated_at"] for r in rows),
     }
     return {"notice_no": notice_no, "status": "확인 필요" if review else "추출됨",

@@ -1610,15 +1610,18 @@ def pq_details(text, price, srm_amount=None):
 ITEM_ONLY_ISSUE = re.compile(r"계산 방법은 원문 확인 필요|기준비율 값이 문서에 없음")
 
 
-def extract_notice(db, notice_no):
+def extract_notice(db, notice_no, docs=None):
+    """docs: [(attachment_id, sha256, 본문, 확장자)] — 주지 않으면 수집한 적격심사기준 본문을 쓴다.
+    업체가 직접 올린 기준서는 attachment_id=None 으로 넘긴다 (company_uploaded_criteria)."""
     notice = db.execute("SELECT title, presumed_price, item_type, notice_date FROM bid_notice WHERE notice_no=?",
                         (notice_no,)).fetchone()
     title, price, item_type, notice_date = notice
-    docs = db.execute("""
-        SELECT a.id, a.sha256, c.text, a.file_ext FROM bid_attachment a
-        JOIN bid_document_content c ON c.attachment_id = a.id
-        WHERE a.notice_no=? AND a.doc_kind='CRITERIA' AND c.read_status='SUCCESS' ORDER BY a.id""",
-                      (notice_no,)).fetchall()
+    if docs is None:
+        docs = db.execute("""
+            SELECT a.id, a.sha256, c.text, a.file_ext FROM bid_attachment a
+            JOIN bid_document_content c ON c.attachment_id = a.id
+            WHERE a.notice_no=? AND a.doc_kind='CRITERIA' AND c.read_status='SUCCESS' ORDER BY a.id""",
+                          (notice_no,)).fetchall()
     special = item_type == "Construction" and is_special(db, notice_no, title)
     result = {"notice_no": notice_no, "title": title, "presumed_price": price, "issues": [], "rows": []}
     chosen = None

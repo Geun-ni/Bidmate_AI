@@ -6,6 +6,7 @@
 90.25% 이상 85점, 최저 2점 / 시공경험 6 = 실적(사정액×1/2 대비, 4점) + 숙지도(2·1·0) / 경영상태 4 /
 기준치 부채비율 120.77%·유동비율 142.57% / 통과 95점. A값 10,171,627원, 사정액 271,946,271원.
 """
+import json
 import unittest
 
 from backend import notices_api, scoring
@@ -334,6 +335,49 @@ class RuleExtractedTest(unittest.TestCase):
             self.assertEqual(db.execute("SELECT count(*) FROM evaluation_rule WHERE notice_no='E012608163' "
                                         "AND updated_by<>'PARSER'").fetchone()[0], 0)
             self.assertIn("E012608163", llm_targets(path))  # 다시 LLM 대상
+            db.close()
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+
+@unittest.skipUnless(DEFAULT_DB_PATH.exists(), "수집 DB 없음")
+class UploadedCriteriaTest(unittest.TestCase):
+    """업체가 올린 기준서: 올린 업체만 쓰고, 공용 배점이 없을 때 점수 계산에 쓴다"""
+
+    def test_upload_and_score(self):
+        import shutil, sqlite3, tempfile
+        from pathlib import Path
+        from backend import uploaded_criteria
+        from backend.db.init_db import init_db
+        tmp = tempfile.mkdtemp()
+        try:
+            path = Path(tmp) / "t.sqlite3"
+            shutil.copy(DEFAULT_DB_PATH, path)
+            init_db(path).close()
+            db = sqlite3.connect(path)
+            db.row_factory = sqlite3.Row
+            no = "E012608054"
+            local = db.execute("SELECT local_path FROM bid_attachment WHERE notice_no=? AND doc_kind='CRITERIA'",
+                               (no,)).fetchone()[0]
+            data = (DEFAULT_DB_PATH.parent / local).read_bytes()
+            admin = {"user_id": None, "is_admin": True}
+            shared = db.execute("SELECT count(*) FROM evaluation_rule WHERE notice_no=?", (no,)).fetchone()[0]
+            got = uploaded_criteria.upload(db, "C1", no, "기준서.hwp", data, admin)
+            self.assertEqual(got["rule_extracted"], 1)
+            self.assertEqual(got["evaluation"]["summary"]["source"], "업체 업로드")
+            # 공용 배점이 없어진 상황: 업로드한 업체만 그 배점으로 계산된다
+            db.execute("DELETE FROM evaluation_rule WHERE notice_no=?", (no,))
+            self.assertEqual(scoring.calculate(db, no, {})["items"], [])
+            items = scoring.calculate(db, no, {}, company_id="C1")["items"]
+            self.assertGreater(len(items), 0)
+            self.assertEqual(len(json.loads(db.execute(
+                "SELECT rules FROM company_uploaded_criteria WHERE company_id='C1'").fetchone()[0])), shared)
+            self.assertEqual(scoring.calculate(db, no, {}, company_id="C2")["items"], [])  # 다른 업체는 못 씀
+            with self.assertRaises(uploaded_criteria.UploadError):
+                uploaded_criteria.upload(db, "C1", no, "a.zip", b"PK\x03\x04", admin)
+            with self.assertRaises(uploaded_criteria.UploadError):
+                uploaded_criteria.upload(db, "C1", no, "a.txt", b"hello", admin)
+            self.assertEqual(uploaded_criteria.remove(db, "C1", no, admin)["deleted"], 1)
             db.close()
         finally:
             shutil.rmtree(tmp, ignore_errors=True)

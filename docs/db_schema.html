@@ -1,0 +1,377 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+
+<title>입찰메이트 전체 스키마</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: 넓은 화면은 왼쪽 표 목록 + 오른쪽 본문, 좁으면 한 열 */
+:root {
+  --bg: #f5f6f8; --surface: #ffffff; --fg: #1b2230; --muted: #5d6779; --line: #dde2ea; --head: #eef1f6;
+  --accent: #1f5fbf;
+  --pk: #8a4b00; --pk-bg: #fbeedd; --fk: #1f5fbf; --fk-bg: #e6eefb; --nn: #3e4a5c; --nn-bg: #e9ecf1; --etc: #2f6f4f; --etc-bg: #e5f2eb;
+  --font-body: "IBM Plex Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #11151c; --surface: #191f28; --fg: #e3e7ee; --muted: #98a3b4; --line: #2b3341; --head: #212937;
+  --accent: #7fa9ef;
+  --pk: #f2b36b; --pk-bg: #3a2a15; --fk: #8fb4f2; --fk-bg: #1d2a40; --nn: #c3cad6; --nn-bg: #2a3240; --etc: #7fd0a5; --etc-bg: #17302a; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #11151c; --surface: #191f28; --fg: #e3e7ee; --muted: #98a3b4; --line: #2b3341; --head: #212937;
+  --accent: #7fa9ef;
+  --pk: #f2b36b; --pk-bg: #3a2a15; --fk: #8fb4f2; --fk-bg: #1d2a40; --nn: #c3cad6; --nn-bg: #2a3240; --etc: #7fd0a5; --etc-bg: #17302a; color-scheme: dark }
+body { background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 14px; line-height: 1.55; }
+.wrap { max-width: 1280px; margin: 0 auto; padding-block: 28px 64px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 28px; align-items: start; }
+@media (max-width: 860px) { .wrap { grid-template-columns: minmax(0, 1fr); } nav { position: static !important; max-height: none !important; } }
+nav { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 16px); max-height: calc(100vh - 32px); overflow-y: auto;
+  display: flex; flex-direction: column; gap: 2px; font-family: var(--font-mono); font-size: 0.78rem; }
+nav a { color: var(--muted); text-decoration: none; padding: 2px 6px; border-radius: 4px; word-break: break-all; }
+nav a:hover, nav a:focus-visible { color: var(--accent); background: var(--surface); outline: none; }
+main { display: grid; gap: 32px; min-width: 0; }
+h1, h2, h3 { margin: 0; line-height: 1.3; text-wrap: balance; }
+h1 { font-size: 1.6rem; }
+h2 { font-size: 1.2rem; }
+h3 { font-size: 1rem; display: flex; gap: 10px; align-items: baseline; }
+h3 span { color: var(--muted); font-weight: 400; font-size: 0.8rem; }
+p { margin: 0; }
+code, pre { font-family: var(--font-mono); font-size: 0.85em; }
+.intro { display: grid; gap: 6px; color: var(--muted); }
+.legend { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 0.82rem; color: var(--muted); }
+.diagram { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 12px; overflow-x: auto; }
+.diagram pre.mermaid { margin: 0; display: flex; justify-content: center; }
+.area { display: grid; gap: 14px; }
+.area-head { display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; border-bottom: 2px solid var(--line); padding-bottom: 6px; }
+.area-head code { color: var(--muted); }
+ul.head { margin: 0; padding-left: 18px; color: var(--muted); font-size: 0.85rem; display: grid; gap: 2px; }
+.tbl { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 14px 16px; display: grid; gap: 8px; min-width: 0; scroll-margin-top: 16px; }
+.tbl > p { color: var(--muted); font-size: 0.88rem; }
+.scroll { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; min-width: 640px; font-size: 0.86rem; }
+th { text-align: left; background: var(--head); font-weight: 500; padding: 6px 8px; white-space: nowrap; }
+td { border-top: 1px solid var(--line); padding: 6px 8px; vertical-align: top; }
+td:first-child { white-space: nowrap; font-weight: 500; }
+td.ty { color: var(--muted); font-family: var(--font-mono); font-size: 0.8rem; }
+td:nth-child(3) { width: 1%; white-space: nowrap; }
+.b { display: inline-block; font-size: 0.72rem; font-weight: 600; padding: 0 6px; border-radius: 3px; margin: 1px 3px 1px 0; white-space: nowrap; }
+.b.pk { background: var(--pk-bg); color: var(--pk); }
+.b.fk { background: var(--fk-bg); color: var(--fk); }
+.b.nn { background: var(--nn-bg); color: var(--nn); }
+.b.etc { background: var(--etc-bg); color: var(--etc); }
+.al { font-family: var(--font-mono); font-size: 0.78rem; color: var(--etc); }
+.ex { display: flex; flex-wrap: wrap; gap: 6px; }
+.ex code { background: var(--head); padding: 2px 6px; border-radius: 3px; color: var(--muted); font-size: 0.76rem; word-break: break-all; }
+.tail { color: var(--muted); font-size: 0.84rem; }
+pre.sql { background: var(--head); padding: 10px 12px; border-radius: 4px; overflow-x: auto; margin: 0; }
+</style>
+
+<div class="wrap">
+  <nav aria-label="표 목록"><a href="#changes">최근 변경 (11-23)</a><a href="#t-license_master">license_master</a><a href="#t-restricted_qualification_master">restricted_qualification_master</a><a href="#t-restricted_qualification_equivalence">restricted_qualification_equivalence</a><a href="#t-srm_region_group_master">srm_region_group_master</a><a href="#t-srm_region_district_master">srm_region_district_master</a><a href="#t-company">company</a><a href="#t-company_license">company_license</a><a href="#t-company_restricted_qualification">company_restricted_qualification</a><a href="#t-app_user">app_user</a><a href="#t-company_user">company_user</a><a href="#t-bid_notice">bid_notice</a><a href="#t-bid_restriction_snapshot">bid_restriction_snapshot</a><a href="#t-bid_restriction_category">bid_restriction_category</a><a href="#t-bid_restriction_item">bid_restriction_item</a><a href="#t-bid_attachment">bid_attachment</a><a href="#t-bid_document_content">bid_document_content</a><a href="#t-collect_run">collect_run</a><a href="#t-notice_analysis_cache">notice_analysis_cache</a><a href="#t-company_bid_eligibility">company_bid_eligibility</a><a href="#t-evaluation_rule">evaluation_rule</a><a href="#t-company_uploaded_criteria">company_uploaded_criteria</a><a href="#t-company_evaluation_draft">company_evaluation_draft</a><a href="#t-required_document_item">required_document_item</a><a href="#t-company_document_check">company_document_check</a><a href="#t-favorite_notice">favorite_notice</a><a href="#t-notice_schedule_event">notice_schedule_event</a><a href="#t-notice_notification">notice_notification</a></nav>
+  <main>
+    <div class="intro">
+      <h1>입찰메이트 전체 스키마</h1>
+      <p>SQLite <code>bidmate.sqlite3</code>, 테이블 27개 + 뷰 1개. <code>backend/db/schema/01~07_*.sql</code>에서 그대로 뽑음 (설명은 SQL 주석).</p>
+      <div class="legend"><span class="b pk">PK</span>기본키 <span class="b fk">FK→표</span>외래키 <span class="b nn">필수</span>NOT NULL <span class="b etc">기본값 …</span>기타 · <span class="al">A · B</span> 넣을 수 있는 값</div>
+    </div>
+    <section class="area" id="changes">
+      <div class="area-head"><h2>최근 변경</h2><code>2026-11-23</code></div>
+      <div class="tbl">
+        <p>표 1개 추가(<code>company_uploaded_criteria</code>), 칸 2개 추가(<code>collect_run</code>), 규칙 보강으로 배점 숫자 바뀜.</p>
+        <div class="scroll"><table><thead><tr><th>표</th><th>바뀐 점</th></tr></thead><tbody>
+          <tr><td><a href="#t-company_uploaded_criteria"><code>company_uploaded_criteria</code></a></td><td><b>표 추가</b>: 업체가 직접 올린 적격심사기준 (zip 이거나 수집기가 기준서를 못 찾은 공고). 올린 업체만 쓰고 공용 <code>evaluation_rule</code>은 안 건드림. 원본 파일은 저장 안 하고 본문 + 규칙 추출 결과(<code>rules</code> JSON)만. 업체·공고당 1건, 공용 배점이 없는 공고에서만 점수 계산에 씀</td></tr>
+          <tr><td><a href="#t-collect_run"><code>collect_run</code></a></td><td><b>칸 추가</b> <code>rule_checked_count</code>·<code>rule_extracted_count</code>: 수집 1번마다 배점 규칙을 돌린 공고 수와 그중 규칙으로 다 뽑은 공고 수 (성공률이 떨어지면 새 문장 표현)</td></tr>
+          <tr><td><a href="#t-evaluation_rule"><code>evaluation_rule</code></a></td><td>규칙 보강(원문 대조 3건 수정 + 감리 가감점 5종)으로 공고 159건, 2,563행. <code>REVIEW</code> 137행 → 21행<br>
+            <code>input_key</code> 추가: <span class="al">bonus_ratio</span>(교육훈련: 이수인원 ÷ 평가대상인원 × 점수), <span class="al">tech_dev</span>(개발실적: 건별 목록). <span class="al">bonus_count</span>는 'N월마다 X점씩'이면 <code>parameters.period</code>로 기간 입력<br>
+            <code>parameters</code> 추가 키: <code>special</code>(OF전기원처럼 따로 세는 인원), <code>short_tenure</code>(단기 재직 감액). 배점 API는 <code>source_quote</code>를 내보내지 않고 출처 파일명만 줌</td></tr>
+          <tr><td><a href="#t-bid_document_content"><code>bid_document_content</code></a></td><td><code>rule_extracted</code>: 기준서 175개 중 1이 151개, 0이 24개 (신청 가능 공고 169건 중 146건 규칙 추출)</td></tr>
+        </tbody></table></div>
+        <p style="margin-top:10px"><b>2026-11-22</b></p>
+        <p>표 추가·삭제 없음. 칸 1개 추가(<code>bid_document_content.rule_extracted</code>), 바뀐 정의 1곳, 실제로 쓰기 시작한 표 6개.</p>
+        <div class="scroll"><table><thead><tr><th>표</th><th>바뀐 점</th></tr></thead><tbody>
+          <tr><td><a href="#t-bid_document_content"><code>bid_document_content</code></a></td><td><b>칸 추가</b> <code>rule_extracted</code>: 적격심사기준 본문마다 규칙 파서로 배점·산식을 다 뽑았는지. <span class="al">1</span> = 다 뽑음, <span class="al">0</span> = 못 뽑은 게 있음(LLM 대상), 비어 있음 = 기준서 아님(공고문 등). 기준서 175개 중 1이 129개, 0이 46개 (공고 기준 126건 · 45건)</td></tr>
+          <tr><td><a href="#t-evaluation_rule"><code>evaluation_rule</code></a></td><td><code>rule_type</code>에 <span class="al">GROUP</span> 추가 (분야·묶음 행, <code>max_score</code> = 묶음 한도, 가감점 묶음은 <code>{"min", "max"}</code>). 하위 항목은 <code>parent_id</code>로 연결. 공고 159건, 2,539행 저장<br>
+            <code>rule_extracted</code>=0 공고 처리: 항목 하나만 못 읽음(계산 방법이 문장뿐인 가감점, 양성실적, 기준비율 값 없음) → 행은 남기고 그 행만 <code>verification_status</code>=<span class="al">REVIEW</span> (33건, 137행) / 배점표 자체를 못 믿음(PDF·zip, 금액 구간 불일치, 합계 안 맞음, 표 못 찾음) → 배점 행 없음 (12건)<br>
+            <b>LLM 대상</b> = <code>rule_extracted</code>=0 이면서 배점 행이 없거나 <code>updated_by</code>=<span class="al">PARSER</span>·<span class="al">REVIEW</span> 행이 남은 공고. LLM이 넣거나 고친 행은 <code>updated_by</code>=<span class="al">LLM</span> (파서가 다시 돌아도 안 덮어씀). 정정으로 기준서가 바뀌면 LLM 행을 지우고 다시 뽑음</td></tr>
+          <tr><td><a href="#t-app_user"><code>app_user</code></a></td><td>로그인 사용 시작: 이메일 + <code>password_hash</code>(scrypt 해시만 저장). 관리자는 서버 설정으로 구분</td></tr>
+          <tr><td><a href="#t-company_user"><code>company_user</code></a></td><td>업체 등록한 사람 = <span class="al">OWNER · ACTIVE</span>. 가입 때 사업자번호로 기존 업체 합류 요청 = <span class="al">MEMBER · PENDING</span> → 소유자 승인 시 <span class="al">ACTIVE</span>, 거절 시 <span class="al">REJECTED</span></td></tr>
+          <tr><td><a href="#t-company"><code>company</code></a></td><td>본점 소재지는 행안부 도로명주소 검색 결과만 받음 → <code>area_limit</code>·<code>sub_area_code</code>를 서버가 정하고 <code>address_validation_status</code> = <span class="al">MATCH</span></td></tr>
+          <tr><td><a href="#t-favorite_notice"><code>favorite_notice</code></a></td><td>관심공고 추가·해제 API 사용 시작 (사용자 개인별)</td></tr>
+          <tr><td><a href="#t-notice_schedule_event"><code>notice_schedule_event</code></a></td><td>일정 저장 시작 (공고 3,218건, 13,145개). 적격심사서류 제출기한은 날짜 없이 원문 문구만 (<code>event_at</code> NULL, <code>confirmed</code> 0)</td></tr>
+          <tr><td><a href="#t-company_evaluation_draft"><code>company_evaluation_draft</code></a></td><td>점수 계산 저장 시작. <code>inputs</code> 키는 배점 행의 <code>position</code>(공고 안 순서) + 공통 키 <code>bid_price</code>·<code>planned_price</code>·<code>management_method</code>, <code>updated_by</code> = 저장한 사용자</td></tr>
+        </tbody></table></div>
+      </div>
+    </section>
+    <section class="area">
+      <div class="area-head"><h2>관계도</h2><code>FK 기준</code></div>
+      <div class="diagram"><pre class="mermaid">erDiagram
+  restricted_qualification_master ||--o{ restricted_qualification_equivalence : &quot;&quot;
+  srm_region_group_master ||--o{ srm_region_district_master : &quot;&quot;
+  srm_region_group_master ||--o{ company : &quot;&quot;
+  srm_region_district_master ||--o{ company : &quot;&quot;
+  company ||--o{ company_license : &quot;&quot;
+  license_master ||--o{ company_license : &quot;&quot;
+  company ||--o{ company_restricted_qualification : &quot;&quot;
+  restricted_qualification_master ||--o{ company_restricted_qualification : &quot;&quot;
+  company ||--o{ company_user : &quot;&quot;
+  app_user ||--o{ company_user : &quot;&quot;
+  bid_notice ||--o{ bid_restriction_snapshot : &quot;&quot;
+  bid_notice ||--o{ bid_restriction_category : &quot;&quot;
+  bid_notice ||--o{ bid_restriction_item : &quot;&quot;
+  bid_notice ||--o{ bid_attachment : &quot;&quot;
+  bid_attachment ||--o{ bid_document_content : &quot;&quot;
+  bid_notice ||--o{ notice_analysis_cache : &quot;&quot;
+  company ||--o{ company_bid_eligibility : &quot;&quot;
+  bid_notice ||--o{ company_bid_eligibility : &quot;&quot;
+  bid_notice ||--o{ evaluation_rule : &quot;&quot;
+  evaluation_rule ||--o{ evaluation_rule : &quot;&quot;
+  bid_attachment ||--o{ evaluation_rule : &quot;&quot;
+  company ||--o{ company_uploaded_criteria : &quot;&quot;
+  bid_notice ||--o{ company_uploaded_criteria : &quot;&quot;
+  app_user ||--o{ company_uploaded_criteria : &quot;&quot;
+  company ||--o{ company_evaluation_draft : &quot;&quot;
+  bid_notice ||--o{ company_evaluation_draft : &quot;&quot;
+  app_user ||--o{ company_evaluation_draft : &quot;&quot;
+  bid_notice ||--o{ required_document_item : &quot;&quot;
+  bid_attachment ||--o{ required_document_item : &quot;&quot;
+  company ||--o{ company_document_check : &quot;&quot;
+  required_document_item ||--o{ company_document_check : &quot;&quot;
+  app_user ||--o{ favorite_notice : &quot;&quot;
+  bid_notice ||--o{ favorite_notice : &quot;&quot;
+  bid_notice ||--o{ notice_schedule_event : &quot;&quot;
+  app_user ||--o{ notice_notification : &quot;&quot;
+  company ||--o{ notice_notification : &quot;&quot;
+  bid_notice ||--o{ notice_notification : &quot;&quot;
+  collect_run {
+    INT id PK
+  }</pre></div>
+    </section>
+    <section class="area" id="a01"><div class="area-head"><h2>A. 기준정보</h2><code>01_reference.sql</code></div>
+<ul class="head"><li>쓰는 모듈: backend/db/seed_reference.py (docs/planning/reference/*.xlsx, 업체정보 데이터 정의서 §5.3·§6.2)</li><li>읽는 모듈: (예정) 업체정보 입력 API, (예정) 룰 엔진 자격 판정</li><li>의존: 없음</li><li>규칙: 코드는 앞자리 0 보존을 위해 전부 TEXT. 시군구 코드는 시드 시 6자리로 복원(011013).</li></ul>
+<article class="tbl" id="t-license_master"><h3><code>license_master</code><span>3칸</span></h3><p>일반 면허 (면허종류.xlsx, SRM licenseQualificationCode)</p><div class="scroll"><table><thead><tr><th>칸</th><th>타입</th><th>제약</th><th>설명</th></tr></thead><tbody><tr><td><code>license_code</code></td><td class="ty">TEXT</td><td><span class="b pk">PK</span></td><td>예: A06, 0041</td></tr><tr><td><code>license_name</code></td><td class="ty">TEXT</td><td><span class="b nn">필수</span></td><td></td></tr><tr><td><code>is_active</code></td><td class="ty">INTEGER</td><td><span class="b nn">필수</span><span class="b etc">기본값 1</span></td><td><span class=al>0 · 1</span></td></tr></tbody></table></div></article>
+<article class="tbl" id="t-restricted_qualification_master"><h3><code>restricted_qualification_master</code><span>3칸</span></h3><p>제한경쟁입찰자격 (제한경쟁입찰자격 종류.xlsx, SRM qualifiedQualificationCode)</p><div class="scroll"><table><thead><tr><th>칸</th><th>타입</th><th>제약</th><th>설명</th></tr></thead><tbody><tr><td><code>qualification_code</code></td><td class="ty">TEXT</td><td><span class="b pk">PK</span></td><td>예: 1, B, C, 2 (숫자도 문자열)</td></tr><tr><td><code>qualification_name</code></td><td class="ty">TEXT</td><td><span class="b nn">필수</span></td><td></td></tr><tr><td><code>is_active</code></td><td class="ty">INTEGER</td><td><span class="b nn">필수</span><span class="b etc">기본값 1</span></td><td><span class=al>0 · 1</span></td></tr></tbody></table></div></article>
+<article class="tbl" id="t-restricted_qualification_equivalence"><h3><code>restricted_qualification_equivalence</code><span>4칸</span></h3><p>자격 상하위 인정: 업체가 held 를 보유하면 공고 요구 accepted 를 충족 (자기 자신 포함)</p><div class="scroll"><table><thead><tr><th>칸</th><th>타입</th><th>제약</th><th>설명</th></tr></thead><tbody><tr><td><code>held_qualification_code</code></td><td class="ty">TEXT</td><td><span class="b pk">PK</span><span class="b fk">FK→restricted_qualification_master</span><span class="b nn">필수</span></td><td></td></tr><tr><td><code>accepted_requirement_code</code></td><td class="ty">TEXT</td><td><span class="b pk">PK</span><span class="b fk">FK→restricted_qualification_master</span><span class="b nn">필수</span></td><td></td></tr><tr><td><code>is_active</code></td><td class="ty">INTEGER</td><td><span class="b nn">필수</span><span class="b etc">기본값 1</span></td><td><span class=al>0 · 1</span></td></tr><tr><td><code>source_note</code></td><td class="ty">TEXT</td><td></td><td></td></tr></tbody></table></div><div class="ex"><code>PRIMARY KEY (held_qualification_code, accepted_requirement_code)</code></div></article>
+<article class="tbl" id="t-srm_region_group_master"><h3><code>srm_region_group_master</code><span>3칸</span></h3><p>SRM 지역그룹 (areaLimit). U(전남)·W(광주)는 과거 공고 판독용, 업체 선택 불가(is_active=0)</p><div class="scroll"><table><thead><tr><th>칸</th><th>타입</th><th>제약</th><th>설명</th></tr></thead><tbody><tr><td><code>area_limit</code></td><td class="ty">TEXT</td><td><span class="b pk">PK</span></td><td>예: F</td></tr><tr><td><code>area_limit_name</code></td><td class="ty">TEXT</td><td><span class="b nn">필수</span><span class="b etc">UNIQUE</span></td><td>예: 강원</td></tr><tr><td><code>is_active</code></td><td class="ty">INTEGER</td><td><span class="b nn">필수</span><span class="b etc">기본값 1</span></td><td><span class=al>0 · 1</span></td></tr></tbody></table></div></article>
+<article class="tbl" id="t-srm_region_district_master"><h3><code>srm_region_district_master</code><span>8칸</span></h3><p>SRM 시·군·구 (지역제한 목록.xlsx, findAreaRestrictList)</p><div class="scroll"><table><thead><tr><th>칸</th><th>타입</th><th>제약</th><th>설명</th></tr></thead><tbody><tr><td><code>code_id</code></td><td class="ty">TEXT</td><td><span class="b pk">PK</span></td><td>예: F_011013</td></tr><tr><td><code>area_limit</code></td><td class="ty">TEXT</td><td><span class="b fk">FK→srm_region_group_master</span><span class="b nn">필수</span></td><td></td></tr><tr><td><code>region_code</code></td><td class="ty">TEXT</td><td><span class="b nn">필수</span></td><td>예: 011013 (6자리, 앞자리 0 보존)</td></tr><tr><td><code>region_name</code></td><td class="ty">TEXT</td><td><span class="b nn">필수</span></td><td>예: 춘천시, 청주시 청원구 (SRM 원래 이름)</td></tr><tr><td><code>sub_area_yn</code></td><td class="ty">INTEGER</td><td><span class="b nn">필수</span><span class="b etc">기본값 1</span></td><td><span class=al>0 · 1</span></td></tr><tr><td><code>si_name</code></td><td class="ty">TEXT</td><td></td><td>region_name 을 나눈 칸 (init_db.FILL_DISTRICT_PARTS 가 채움). 해당 없는 칸은 NULL 춘천시 → si / 홍천군 → gun / 강남구 → gu (광역시·특별시 구) / 청주시 청원구 → si + gu</td></tr><tr><td><code>gun_name</code></td><td class="ty">TEXT</td><td></td><td></td></tr><tr><td><code>gu_name</code></td><td class="ty">TEXT</td><td></td><td></td></tr></tbody></table></div><div class="ex"><code>UNIQUE (area_limit, region_code)</code></div></article>
+<p class="tail">면허 상하위 인정(license_equivalence)은 2026-11-21 범위 축소로 뺐다: 면허는 정확히 같은 코드만 인정, 나머지는 REVIEW</p>
+</section>
+<section class="area" id="a02"><div class="area-head"><h2>B. 업체·사용자</h2><code>02_company.sql</code></div>
+<ul class="head"><li>쓰는 모듈: (예정) 업체정보 입력 API ← 프론트 업체정보 입력 화면(UI-02, UI-07). 현재 backend/server.py 에는 /api/demo 만 있음</li><li>읽는 모듈: (예정) 룰 엔진 자격 판정, (예정) 알림 발송</li><li>의존: 01_reference.sql</li><li>규칙: 업체는 가상 데이터만 사용. PK 는 업체정보 데이터 정의서 v0.2 이름(company_id 등, UUID 문자열)을 따름.</li></ul>
+<article class="tbl" id="t-company"><h3><code>company</code><span>9칸</span></h3><div class="scroll"><table><thead><tr><th>칸</th><th>타입</th><th>제약</th><th>설명</th></tr></thead><tbody><tr><td><code>company_id</code></td><td class="ty">TEXT</td><td><span class="b pk">PK</span></td><td>UUID</td></tr><tr><td><code>company_name</code></td><td class="ty">TEXT</td><td><span class="b nn">필수</span></td><td></td></tr><tr><td><code>business_registration_no</code></td><td class="ty">TEXT</td><td></td><td></td></tr><tr><td><code>head_office_address</code></td><td class="ty">TEXT</td><td><span class="b nn">필수</span></td><td></td></tr><tr><td><code>area_limit</code></td><td class="ty">TEXT</td><td><span class="b fk">FK→srm_region_group_master</span><span class="b nn">필수</span></td><td></td></tr><tr><td><code>sub_area_code</code></td><td class="ty">TEXT</td><td><span class="b nn">필수</span></td><td>srm_region_district_master.region_code</td></tr><tr><td><code>address_validation_status</code></td><td class="ty">TEXT</td><td><span class="b nn">필수</span><span class="b etc">기본값 &#x27;REVIEW&#x27;</span></td><td><span class=al>MATCH · MISMATCH · REVIEW</span></td></tr><tr><td><code>created_at</code></td><td class="ty">TEXT</td><td><span class="b nn">필수</span></td><td></td></tr><tr><td><code>updated_at</code></td><td class="ty">TEXT</td><td><span class="b nn">필수</span></td><td></td></tr></tbody></table></div><div class="ex"><code>FOREIGN KEY (area_limit, sub_area_code) REFERENCES srm_region_district_master(area_limit, region_code)  — (광역, 시군구) 조합이 기준정보에 있어야 저장 가능 (예: 강원 + 가평군 차단)</code></div></article>
+<article class="tbl" id="t-company_license"><h3><code>company_license</code><span>7칸</span></h3><div class="scroll"><table><thead><tr><th>칸</th><th>타입</th><th>제약</th><th>설명</th></tr></thead><tbody><tr><td><code>company_license_id</code></td><td class="ty">TEXT</td><td><span class="b pk">PK</span></td><td>UUID</td></tr><tr><td><code>company_id</code></td><td class="ty">TEXT</td><td><span class="b fk">FK→company</span><span class="b nn">필수</span></td><td></td></tr><tr><td><code>license_code</code></td><td class="ty">TEXT</td><td><span class="b fk">FK→license_master</span><span class="b nn">필수</span></td><td></td></tr><tr><td><code>license_registration_no</code></td><td class="ty">TEXT</td><td><span class="b nn">필수</span></td><td></td></tr><tr><td><code>license_registration_date</code></td><td class="ty">TEXT</td><td><span class="b nn">필수</span></td><td>YYYY-MM-DD (실제 등록일자)</td></tr><tr><td><code>created_at</code></td><td class="ty">TEXT</td><td><span class="b nn">필수</span></td><td></td></tr><tr><td><code>updated_at</code></td><td class="ty">TEXT</td><td><span class="b nn">필수</span></td><td></td></tr></tbody></table></div><div class="ex"><code>UNIQUE (company_id, license_code)</code></div></article>
+<article class="tbl" id="t-company_restricted_qualification"><h3><code>company_restricted_qualification</code><span>5칸</span></h3><div class="scroll"><table><thead><tr><th>칸</th><th>타입</th><th>제약</th><th>설명</th></tr></thead><tbody><tr><td><code>company_qualification_id</code></td><td class="ty">TEXT</td><td><span class="b pk">PK</span></td><td>UUID</td></tr><tr><td><code>company_id</code></td><td class="ty">TEXT</td><td><span class="b fk">FK→company</span><span class="b nn">필수</span></td><td></td></tr><tr><td><code>qualification_code</code></td><td class="ty">TEXT</td><td><span class="b fk">FK→restricted_qualification_master</span><span class="b nn">필수</span></td><td></td></tr><tr><td><code>created_at</code></td><td class="ty">TEXT</td><td><span class="b nn">필수</span></td><td></td></tr><tr><td><code>updated_at</code></td><td class="ty">TEXT</td><td><span class="b nn">필수</span></td><td></td></tr></tbody></table></div><div class="ex"><code>UNIQUE (company_id, qualification_code)</code></div></article>
+<article class="tbl" id="t-app_user"><h3><code>app_user</code><span>11칸</span></h3><p>로그인 사용자. 알림 수신 설정도 사용자 단위로 여기에 둔다 (옛 company_notification_setting)</p><div class="scroll"><table><thead><tr><th>칸</th><th>타입</th><th>제약</th><th>설명</th></tr></thead><tbody><tr><td><code>user_id</code></td><td class="ty">TEXT</td><td><span class="b pk">PK</span></td><td>UUID</td></tr><tr><td><code>email</code></td><td class="ty">TEXT</td><td><span class="b nn">필수</span><span class="b etc">UNIQUE</span></td><td></td></tr><tr><td><code>password_hash</code></td><td class="ty">TEXT</td><td></td><td>원문 저장 금지. 외부 로그인이면 NULL</td></tr><tr><td><code>display_name</code></td><td class="ty">TEXT</td><td></td><td></td></tr><tr><td><code>email_enabled</code></td><td class="ty">INTEGER</td><td><span class="b nn">필수</span><span class="b etc">기본값 0</span></td><td><span class=al>0 · 1</span></td></tr><tr><td><code>telegram_chat_id</code></td><td class="ty">TEXT</td><td></td><td></td></tr><tr><td><code>telegram_enabled</code></td><td class="ty">INTEGER</td><td><span class="b nn">필수</span><span class="b etc">기본값 0</span></td><td><span class=al>0 · 1</span></td></tr><tr><td><code>include_review</code></td><td class="ty">INTEGER</td><td><span class="b nn">필수</span><span class="b etc">기본값 1</span></td><td><span class=al>0 · 1</span><br>REVIEW 공고도 알릴지</td></tr><tr><td><code>consent_at</code></td><td class="ty">TEXT</td><td></td><td>수신 동의 일시 (NULL이면 발송 금지)</td></tr><tr><td><code>created_at</code></td><td class="ty">TEXT</td><td><span class="b nn">필수</span></td><td></td></tr><tr><td><code>updated_at</code></td><td class="ty">TEXT</td><td><span class="b nn">필수</span></td><td></td></tr></tbody></table></div></article>
+<article class="tbl" id="t-company_user"><h3><code>company_user</code><span>5칸</span></h3><p>업체 소속 (한 업체에 여러 사용자). 업체 데이터 API는 membership_status=&#x27;ACTIVE&#x27; 인 소속만 조회·수정 허용<br>업체명·사업자번호가 같다고 자동 연결하지 않는다 (업체정보 정의서 §9)</p><div class="scroll"><table><thead><tr><th>칸</th><th>타입</th><th>제약</th><th>설명</th></tr></thead><tbody><tr><td><code>company_id</code></td><td class="ty">TEXT</td><td><span class="b pk">PK</span><span class="b fk">FK→company</span><span class="b nn">필수</span></td><td></td></tr><tr><td><code>user_id</code></td><td class="ty">TEXT</td><td><span class="b pk">PK</span><span class="b fk">FK→app_user</span><span class="b nn">필수</span></td><td></td></tr><tr><td><code>role</code></td><td class="ty">TEXT</td><td><span class="b nn">필수</span><span class="b etc">기본값 &#x27;MEMBER&#x27;</span></td><td><span class=al>OWNER · MEMBER</span></td></tr><tr><td><code>membership_status</code></td><td class="ty">TEXT</td><td><span class="b nn">필수</span><span class="b etc">기본값 &#x27;PENDING&#x27;</span></td><td><span class=al>PENDING · ACTIVE · REJECTED</span></td></tr><tr><td><code>created_at</code></td><td class="ty">TEXT</td><td><span class="b nn">필수</span></td><td></td></tr></tbody></table></div><div class="ex"><code>PRIMARY KEY (company_id, user_id)</code></div></article>
+</section>
+<section class="area" id="a03"><div class="area-head"><h2>C. 공고 수집</h2><code>03_bid_collection.sql</code></div>
+<ul class="head"><li>쓰는 모듈: backend/collector/collect.py (Open API electContract.do + SRM /router)</li><li>읽는 모듈: (예정) 추천 목록·공고 상세 API, (예정) 룰 엔진, (예정) AI 문서 분석(bid_document_content 입력)</li><li>의존: 없음 (업체 테이블을 참조하지 않음)</li><li>서비스 범위: 한전(COM01) 공사용역(ConstructionService) 중 낙찰방법 적격심사(QualifiedEval) 공고만 저장</li></ul>
+<article class="tbl" id="t-bid_notice"><h3><code>bid_notice</code><span>35칸</span></h3><p>공고 기본정보</p><div class="scroll"><table><thead><tr><th>칸</th><th>타입</th><th>제약</th><th>설명</th></tr></thead><tbody><tr><td><code>notice_no</code></td><td class="ty">TEXT</td><td><span class="b pk">PK</span></td><td>공고번호 (예: E012607925)</td></tr><tr><td><code>bid_id</code></td><td class="ty">TEXT</td><td></td><td>SRM 내부 ID</td></tr><tr><td><code>company_id_src</code></td><td class="ty">TEXT</td><td><span class="b nn">필수</span><span class="b etc">기본값 &#x27;COM01&#x27;</span></td><td>발주사 구분(API companyId). 이름 변경 제안 있음(README)</td></tr><tr><td><code>title</code></td><td class="ty">TEXT</td><td><span class="b nn">필수</span></td><td></td></tr><tr><td><code>purchase_type</code></td><td class="ty">TEXT</td><td></td><td>ConstructionService</td></tr><tr><td><code>item_type</code></td><td class="ty">TEXT</td><td></td><td>Construction / Service</td></tr><tr><td><code>bid_type</code></td><td class="ty">TEXT</td><td></td><td>QualifiedEval (낙찰방법)</td></tr><tr><td><code>competition_type</code></td><td class="ty">TEXT</td><td></td><td></td></tr><tr><td><code>work_type</code></td><td class="ty">TEXT</td><td></td><td>공사유형 분류 (분류 규칙 예정)</td></tr><tr><td><code>place_name</code></td><td class="ty">TEXT</td><td></td><td>발주기관</td></tr><tr><td><code>notice_date</code></td><td class="ty">TEXT</td><td></td><td></td></tr><tr><td><code>attend_req_begin_at</code></td><td class="ty">TEXT</td><td></td><td>입찰참가신청 시작</td></tr><tr><td><code>attend_req_close_at</code></td><td class="ty">TEXT</td><td></td><td>입찰참가신청 마감 (&#x27;YYYY-MM-DD HH:MM:SS&#x27;, KST)</td></tr><tr><td><code>bid_begin_at</code></td><td class="ty">TEXT</td><td></td><td>투찰 시작</td></tr><tr><td><code>bid_end_at</code></td><td class="ty">TEXT</td><td></td><td>투찰 마감</td></tr><tr><td><code>open_bid_at</code></td><td class="ty">TEXT</td><td></td><td>개찰 일시 (SRM)</td></tr><tr><td><code>progress_state</code></td><td class="ty">TEXT</td><td></td><td>마감 후에도 AttendProgress 로 남는 경우 많음 → 마감 일시와 함께 판단</td></tr><tr><td><code>is_open</code></td><td class="ty">INTEGER</td><td><span class="b etc">계산 칸</span></td><td></td></tr><tr><td><code>presumed_price</code></td><td class="ty">INTEGER</td><td></td><td>추정가격(VAT 제외): 적격심사기준 금액구간, 실적 요건</td></tr><tr><td><code>estimated_price_basic_amount</code></td><td class="ty">INTEGER</td><td></td><td>예비가격 기초금액(VAT 포함)</td></tr><tr><td><code>approximate_amount</code></td><td class="ty">INTEGER</td><td></td><td>사정액(=사정금액, API approximateAmount): 시공경험 평가</td></tr><tr><td><code>presumed_amount</code></td><td class="ty">INTEGER</td><td></td><td>추정금액</td></tr><tr><td><code>a_amount</code></td><td class="ty">INTEGER</td><td></td><td>A금액 (SRM totalAAmt)</td></tr><tr><td><code>net_construction_cost</code></td><td class="ty">INTEGER</td><td></td><td>순공사원가(재료비+노무비+경비). SRM에 값 없음 → NULL=미확인 (공고문 금액표 추출 방식은 팀 결정)</td></tr><tr><td><code>overhead_cost_amount</code></td><td class="ty">INTEGER</td><td></td><td>경비 (SRM overHeadCostAmount = 공고문 금액표 &#x27;경비&#x27; 행)</td></tr><tr><td><code>notice_doc_found</code></td><td class="ty">INTEGER</td><td></td><td><span class=al>0 · 1</span><br>공고문 확보 (NULL=미확인)</td></tr><tr><td><code>criteria_doc_found</code></td><td class="ty">INTEGER</td><td></td><td><span class=al>0 · 1</span><br>적격심사기준 확보</td></tr><tr><td><code>api_raw</code></td><td class="ty">TEXT</td><td><span class="b nn">필수</span></td><td>Open API 응답 원본(JSON)</td></tr><tr><td><code>api_created_at</code></td><td class="ty">TEXT</td><td></td><td>정정 공고 감지 (init_db.py 마이그레이션이 기존 DB에도 같은 컬럼을 추가함) Open API createDatetime. 정정되면 더 늦은 값이 새로 옴</td></tr><tr><td><code>srm_revision</code></td><td class="ty">TEXT</td><td></td><td>SRM 정정 차수 (findBidBasicInfo, 수집 시점 기록)</td></tr><tr><td><code>needs_recollect</code></td><td class="ty">INTEGER</td><td><span class="b nn">필수</span><span class="b etc">기본값 0</span></td><td><span class=al>0 · 1</span></td></tr><tr><td><code>recollect_reason</code></td><td class="ty">TEXT</td><td></td><td></td></tr><tr><td><code>last_collected_at</code></td><td class="ty">TEXT</td><td></td><td>투찰제한·첨부를 마지막으로 수집한 시각</td></tr><tr><td><code>first_seen_at</code></td><td class="ty">TEXT</td><td><span class="b nn">필수</span></td><td></td></tr><tr><td><code>updated_at</code></td><td class="ty">TEXT</td><td><span class="b nn">필수</span></td><td></td></tr></tbody></table></div></article>
+<article class="tbl" id="t-bid_restriction_snapshot"><h3><code>bid_restriction_snapshot</code><span>13칸</span></h3><p>투찰제한 자동심사 설정 (SRM findBidBasicInfo)</p><div class="scroll"><table><thead><tr><th>칸</th><th>타입</th><th>제약</th><th>설명</th></tr></thead><tbody><tr><td><code>notice_no</code></td><td class="ty">TEXT</td><td><span class="b pk">PK</span><span class="b fk">FK→bid_notice</span></td><td></td></tr><tr><td><code>fetch_status</code></td><td class="ty">TEXT</td><td><span class="b nn">필수</span></td><td><span class=al>SUCCESS · PARTIAL · FAILED</span></td></tr><tr><td><code>error</code></td><td class="ty">TEXT</td><td></td><td></td></tr><tr><td><code>license_auto_eval_method</code></td><td class="ty">TEXT</td><td></td><td>Auto / Manual / None</td></tr><tr><td><code>license_auto_eval_type</code></td><td class="ty">TEXT</td><td></td><td>And / Or</td></tr><tr><td><code>qualified_auto_eval_method</code></td><td class="ty">TEXT</td><td></td><td></td></tr><tr><td><code>qualified_auto_eval_type</code></td><td class="ty">TEXT</td><td></td><td></td></tr><tr><td><code>region_limit_auto_eval_method</code></td><td class="ty">TEXT</td><td></td><td></td></tr><tr><td><code>region_limit_auto_eval_type</code></td><td class="ty">TEXT</td><td></td><td></td></tr><tr><td><code>license_main_auto_eval_type</code></td><td class="ty">TEXT</td><td></td><td></td></tr><tr><td><code>limited_reason_code</code></td><td class="ty">TEXT</td><td></td><td></td></tr><tr><td><code>raw_response</code></td><td class="ty">TEXT</td><td></td><td>담당자 이름·사번·연락처 제거 후 저장</td></tr><tr><td><code>fetched_at</code></td><td class="ty">TEXT</td><td><span class="b nn">필수</span></td><td></td></tr></tbody></table></div></article>
+<article class="tbl" id="t-bid_restriction_category"><h3><code>bid_restriction_category</code><span>6칸</span></h3><p>범주별 조회 결과: SUCCESS + item_count=0 일 때만 &#x27;제한 없음&#x27;</p><div class="scroll"><table><thead><tr><th>칸</th><th>타입</th><th>제약</th><th>설명</th></tr></thead><tbody><tr><td><code>notice_no</code></td><td class="ty">TEXT</td><td><span class="b pk">PK</span><span class="b fk">FK→bid_notice</span><span class="b nn">필수</span></td><td></td></tr><tr><td><code>category</code></td><td class="ty">TEXT</td><td><span class="b pk">PK</span><span class="b nn">필수</span></td><td><span class=al>LICENSE · QUALIFIED · REGION · LICENSE_MAIN</span></td></tr><tr><td><code>fetch_status</code></td><td class="ty">TEXT</td><td><span class="b nn">필수</span></td><td><span class=al>SUCCESS · FAILED</span></td></tr><tr><td><code>item_count</code></td><td class="ty">INTEGER</td><td></td><td></td></tr><tr><td><code>error</code></td><td class="ty">TEXT</td><td></td><td></td></tr><tr><td><code>fetched_at</code></td><td class="ty">TEXT</td><td><span class="b nn">필수</span></td><td></td></tr></tbody></table></div><div class="ex"><code>PRIMARY KEY (notice_no, category)</code></div></article>
+<article class="tbl" id="t-bid_restriction_item"><h3><code>bid_restriction_item</code><span>8칸</span></h3><p>공고 요구 면허자격명·적격자격명·지역·주력분야</p><div class="scroll"><table><thead><tr><th>칸</th><th>타입</th><th>제약</th><th>설명</th></tr></thead><tbody><tr><td><code>id</code></td><td class="ty">INTEGER</td><td><span class="b pk">PK</span></td><td></td></tr><tr><td><code>notice_no</code></td><td class="ty">TEXT</td><td><span class="b fk">FK→bid_notice</span><span class="b nn">필수</span></td><td></td></tr><tr><td><code>category</code></td><td class="ty">TEXT</td><td><span class="b nn">필수</span></td><td><span class=al>LICENSE · QUALIFIED · REGION · LICENSE_MAIN</span></td></tr><tr><td><code>code</code></td><td class="ty">TEXT</td><td></td><td>면허/자격/주력분야 코드, 지역은 area_code 와 동일</td></tr><tr><td><code>name</code></td><td class="ty">TEXT</td><td></td><td>면허자격명 / 적격자격명 / 지역명</td></tr><tr><td><code>area_code</code></td><td class="ty">TEXT</td><td></td><td>REGION: 광역 그룹 (예: I)</td></tr><tr><td><code>sub_area_code</code></td><td class="ty">TEXT</td><td></td><td>REGION: 시군구 (NULL = 광역 전체)</td></tr><tr><td><code>sub_area_name</code></td><td class="ty">TEXT</td><td></td><td></td></tr></tbody></table></div></article>
+<article class="tbl" id="t-bid_attachment"><h3><code>bid_attachment</code><span>12칸</span></h3><p>공고문·적격심사기준 첨부 (Open API 우선 → 누락 시 SRM 보완)</p><div class="scroll"><table><thead><tr><th>칸</th><th>타입</th><th>제약</th><th>설명</th></tr></thead><tbody><tr><td><code>id</code></td><td class="ty">INTEGER</td><td><span class="b pk">PK</span></td><td></td></tr><tr><td><code>notice_no</code></td><td class="ty">TEXT</td><td><span class="b fk">FK→bid_notice</span><span class="b nn">필수</span></td><td></td></tr><tr><td><code>doc_kind</code></td><td class="ty">TEXT</td><td><span class="b nn">필수</span></td><td><span class=al>NOTICE · CRITERIA</span></td></tr><tr><td><code>filename</code></td><td class="ty">TEXT</td><td><span class="b nn">필수</span></td><td></td></tr><tr><td><code>file_ext</code></td><td class="ty">TEXT</td><td></td><td></td></tr><tr><td><code>source</code></td><td class="ty">TEXT</td><td><span class="b nn">필수</span></td><td><span class=al>OPEN_API · SRM_FALLBACK</span></td></tr><tr><td><code>download_status</code></td><td class="ty">TEXT</td><td><span class="b nn">필수</span></td><td><span class=al>SUCCESS · FAILED</span></td></tr><tr><td><code>local_path</code></td><td class="ty">TEXT</td><td></td><td></td></tr><tr><td><code>size_bytes</code></td><td class="ty">INTEGER</td><td></td><td></td></tr><tr><td><code>sha256</code></td><td class="ty">TEXT</td><td></td><td>정정 공고 시 파일 변경 감지</td></tr><tr><td><code>error</code></td><td class="ty">TEXT</td><td></td><td></td></tr><tr><td><code>fetched_at</code></td><td class="ty">TEXT</td><td><span class="b nn">필수</span></td><td></td></tr></tbody></table></div><div class="ex"><code>UNIQUE (notice_no, filename)</code></div></article>
+<article class="tbl" id="t-bid_document_content"><h3><code>bid_document_content</code><span>10칸</span></h3><p>첨부 원문 (전처리한 본문 + 한글 수식 스크립트). 해석 없이 읽기만 함 → AI 문서 분석의 입력<br>본문 형식은 backend/collector/doc_reader.py 맨 위 설명 (표는 &#x27;칸1 | 칸2&#x27; 행, 수식·그림은 나온 자리에 표시)</p><div class="scroll"><table><thead><tr><th>칸</th><th>타입</th><th>제약</th><th>설명</th></tr></thead><tbody><tr><td><code>attachment_id</code></td><td class="ty">INTEGER</td><td><span class="b pk">PK</span><span class="b fk">FK→bid_attachment</span></td><td></td></tr><tr><td><code>read_status</code></td><td class="ty">TEXT</td><td><span class="b nn">필수</span></td><td><span class=al>SUCCESS · FAILED</span></td></tr><tr><td><code>text</code></td><td class="ty">TEXT</td><td></td><td></td></tr><tr><td><code>equations</code></td><td class="ty">TEXT</td><td></td><td>JSON [{&quot;script&quot;, &quot;line&quot;(본문 줄 번호), &quot;context&quot;}]</td></tr><tr><td><code>paragraph_count</code></td><td class="ty">INTEGER</td><td></td><td>본문 줄 수</td></tr><tr><td><code>equation_count</code></td><td class="ty">INTEGER</td><td></td><td></td></tr><tr><td><code>error</code></td><td class="ty">TEXT</td><td></td><td></td></tr><tr><td><code>read_at</code></td><td class="ty">TEXT</td><td><span class="b nn">필수</span></td><td></td></tr><tr><td><code>parser_version</code></td><td class="ty">TEXT</td><td></td><td>doc_reader.PARSER_VERSION (NULL = 전처리 전 v1)</td></tr><tr><td><code>rule_extracted</code></td><td class="ty">INTEGER</td><td></td><td><span class=al>0 · 1</span><br>적격심사기준(CRITERIA)에서 평가산식을 규칙 파서로 뽑았는지: 1 = 성공(evaluation_rule 에 행 있음), 0 = 실패(PDF·zip·그림, 기준서·공고 불일치, 규칙으로 못 읽는 항목) → LLM이 본문을 직접 읽는다. NULL = 판단 대상 아님(공고문 등) 또는 아직 안 돌림. backend/db/extract_evaluation_rules.py 가 채운다</td></tr></tbody></table></div></article>
+<article class="tbl" id="t-collect_run"><h3><code>collect_run</code><span>19칸</span></h3><div class="scroll"><table><thead><tr><th>칸</th><th>타입</th><th>제약</th><th>설명</th></tr></thead><tbody><tr><td><code>id</code></td><td class="ty">INTEGER</td><td><span class="b pk">PK</span></td><td></td></tr><tr><td><code>started_at</code></td><td class="ty">TEXT</td><td><span class="b nn">필수</span></td><td></td></tr><tr><td><code>finished_at</code></td><td class="ty">TEXT</td><td></td><td></td></tr><tr><td><code>api_notice_count</code></td><td class="ty">INTEGER</td><td></td><td></td></tr><tr><td><code>target_count</code></td><td class="ty">INTEGER</td><td></td><td></td></tr><tr><td><code>processed_count</code></td><td class="ty">INTEGER</td><td></td><td></td></tr><tr><td><code>stopped_reason</code></td><td class="ty">TEXT</td><td></td><td></td></tr><tr><td><code>new_notice_count</code></td><td class="ty">INTEGER</td><td></td><td>실행 결과 건수 (init_db.py 마이그레이션이 기존 DB에도 추가) 이번 실행에서 bid_notice 에 처음 저장된 공고 (알림 연결 지점)</td></tr><tr><td><code>completed_count</code></td><td class="ty">INTEGER</td><td></td><td>상세 수집(투찰제한·문서)을 끝낸 공고</td></tr><tr><td><code>deferred_count</code></td><td class="ty">INTEGER</td><td></td><td>미처리: 한도·SRM 차단·중단으로 이번에 못 한 상세 수집 (다음 실행에서 이어서)</td></tr><tr><td><code>failed_count</code></td><td class="ty">INTEGER</td><td></td><td>처리했지만 실패·부분 수집으로 끝난 공고 (다음 실행에서 재시도)</td></tr><tr><td><code>mode</code></td><td class="ty">TEXT</td><td></td><td>full(최초 적재) / daily(증분)</td></tr><tr><td><code>window_begin</code></td><td class="ty">TEXT</td><td></td><td>공식 API 조회 공고일 범위 (YYYYMMDD)</td></tr><tr><td><code>window_end</code></td><td class="ty">TEXT</td><td></td><td></td></tr><tr><td><code>list_synced</code></td><td class="ty">INTEGER</td><td></td><td>1 = 조회 범위 전체를 정상 반영 → 다음 daily 의 기준 시점</td></tr><tr><td><code>updated_count</code></td><td class="ty">INTEGER</td><td></td><td>기본정보만 바뀐 공고 (상세 재사용)</td></tr><tr><td><code>corrected_count</code></td><td class="ty">INTEGER</td><td></td><td>정정·첨부 변경 → 상세 재수집 표시</td></tr><tr><td><code>rule_checked_count</code></td><td class="ty">INTEGER</td><td></td><td>이번 실행에서 적격심사기준 본문으로 배점 규칙을 돌린 공고</td></tr><tr><td><code>rule_extracted_count</code></td><td class="ty">INTEGER</td><td></td><td>그중 규칙으로 다 뽑은 공고 (rule_extracted=1). 비율이 떨어지면 새 문장 표현</td></tr></tbody></table></div></article>
+</section>
+<section class="area" id="a04"><div class="area-head"><h2>D. AI 분석 상태</h2><code>04_document_analysis.sql</code></div>
+<ul class="head"><li>쓰는 모듈: 팀 결정 필요 — AI 파트(ai/)가 직접 저장할지, 백엔드 API/룰 엔진이 검증 후 저장할지 미정. 현재 코드 없음</li><li>데이터 출처: AI 파트(LLM)가 bid_document_content(03)의 원문 텍스트·수식을 읽어 추출</li><li>읽는 모듈: (예정) 공고 상세 요약 탭 API, (예정) 룰 엔진</li><li>의존: 03_bid_collection.sql</li><li>이 파일은 저장 구조만 정의한다. field 이름·value JSON 형식은 AI 파트와 협의.</li></ul>
+<article class="tbl" id="t-notice_analysis_cache"><h3><code>notice_analysis_cache</code><span>5칸</span></h3><p>공고별 분석 상태: 신규 공고 1회 분석·재사용, 정정 시 무효화 후 재분석</p><div class="scroll"><table><thead><tr><th>칸</th><th>타입</th><th>제약</th><th>설명</th></tr></thead><tbody><tr><td><code>notice_no</code></td><td class="ty">TEXT</td><td><span class="b pk">PK</span><span class="b fk">FK→bid_notice</span></td><td></td></tr><tr><td><code>document_version</code></td><td class="ty">TEXT</td><td></td><td>분석에 쓴 첨부 sha256 조합</td></tr><tr><td><code>analysis_status</code></td><td class="ty">TEXT</td><td><span class="b nn">필수</span></td><td><span class=al>PENDING · DONE · FAILED · INVALIDATED</span></td></tr><tr><td><code>analyzed_at</code></td><td class="ty">TEXT</td><td></td><td></td></tr><tr><td><code>invalidated_at</code></td><td class="ty">TEXT</td><td></td><td></td></tr></tbody></table></div></article>
+<p class="tail">문서 추출값 표(document_extraction)는 2026-11-21 뺐다. 결과를 담는 표(evaluation_rule, required_document_item)가</p>
+</section>
+<section class="area" id="a05"><div class="area-head"><h2>E. 판정·점수</h2><code>05_evaluation.sql</code></div>
+<ul class="head"><li>쓰는 모듈:</li><li>company_bid_eligibility  → (예정) 룰 엔진. 업체 매칭은 현재 범위 밖(11-19 결정: 조건 확인까지만)</li><li>evaluation_rule          → 팀 결정 필요 (AI 추출값을 AI 파트가 직접 저장 vs 룰 엔진이 검증 후 저장)</li><li>company_evaluation_draft → (예정) 점수 계산 API ← 프론트 점수 계산 탭(UI-04)</li><li>읽는 모듈: (예정) 추천 목록 API(07 뷰), 점수 계산 탭 API</li><li>의존: 02_company.sql, 03_bid_collection.sql</li></ul>
+<article class="tbl" id="t-company_bid_eligibility"><h3><code>company_bid_eligibility</code><span>9칸</span></h3><p>공고별 1차 참가자격 판정 (업체정보 정의서 §8)</p><div class="scroll"><table><thead><tr><th>칸</th><th>타입</th><th>제약</th><th>설명</th></tr></thead><tbody><tr><td><code>company_id</code></td><td class="ty">TEXT</td><td><span class="b pk">PK</span><span class="b fk">FK→company</span><span class="b nn">필수</span></td><td></td></tr><tr><td><code>notice_no</code></td><td class="ty">TEXT</td><td><span class="b pk">PK</span><span class="b fk">FK→bid_notice</span><span class="b nn">필수</span></td><td></td></tr><tr><td><code>license_status</code></td><td class="ty">TEXT</td><td><span class="b nn">필수</span></td><td><span class=al>MATCH · MISMATCH · REVIEW · NOT_APPLICABLE</span></td></tr><tr><td><code>qualification_status</code></td><td class="ty">TEXT</td><td><span class="b nn">필수</span></td><td><span class=al>MATCH · MISMATCH · REVIEW · NOT_APPLICABLE</span></td></tr><tr><td><code>region_status</code></td><td class="ty">TEXT</td><td><span class="b nn">필수</span></td><td><span class=al>MATCH · MISMATCH · REVIEW · NOT_APPLICABLE</span></td></tr><tr><td><code>license_main_status</code></td><td class="ty">TEXT</td><td><span class="b nn">필수</span></td><td><span class=al>MATCH · MISMATCH · REVIEW · NOT_APPLICABLE</span></td></tr><tr><td><code>overall_status</code></td><td class="ty">TEXT</td><td><span class="b nn">필수</span></td><td><span class=al>MATCH · MISMATCH · REVIEW</span></td></tr><tr><td><code>reason</code></td><td class="ty">TEXT</td><td></td><td>불일치 코드, 적용된 상하위 인정 규칙 등</td></tr><tr><td><code>checked_at</code></td><td class="ty">TEXT</td><td><span class="b nn">필수</span></td><td></td></tr></tbody></table></div><div class="ex"><code>PRIMARY KEY (company_id, notice_no)</code></div></article>
+<article class="tbl" id="t-evaluation_rule"><h3><code>evaluation_rule</code><span>23칸</span></h3><p>적격심사 평가 기준: 행 1개 = 공고 1건의 평가 항목 1개 (분야별 배점, 입찰가격 산식, 구간 점수표, 가·감점, 통과점수)<br>쓰는 모듈: 정근(배점·산식 추출). 산식이 그림에만 있으면 formula_source=&#x27;IMAGE&#x27; + image_path 로 남기고,<br>LLM이 그림을 읽어 formula 를 채운 뒤 updated_by=&#x27;LLM&#x27; 으로 고친다 (검증 전까지 verification_status=&#x27;REVIEW&#x27;).<br>parameters JSON 형식 (rule_type 별):<br>FORMULA   {&quot;vars&quot;: {&quot;A&quot;: &quot;a_amount&quot;, &quot;기준율&quot;: 88}}<br>TABLE     {&quot;rows&quot;: [{&quot;min&quot;: null, &quot;max&quot;: 50, &quot;score&quot;: 7}, ...]} 또는 {&quot;rows&quot;: [{&quot;grade&quot;: &quot;AAA&quot;, &quot;score&quot;: 15}, ...]}<br>FIXED     {&quot;score&quot;: 1, &quot;condition&quot;: &quot;원문 조건 문구&quot;}<br>THRESHOLD {&quot;pass_score&quot;: 95}<br>GROUP     하위 항목을 묶는 행 (예: 당해공사 수행능력 30, 시공경험 18). max_score 가 묶음 한도.<br>          가감점 묶음은 {&quot;min&quot;: -5, &quot;max&quot;: 0.1} 처럼 범위를 둔다<br>근거 위치(source_location)는 본문 줄 번호가 아니라 &#x27;별표1 &gt; 제3조 &gt; 표 2행&#x27;처럼 문서 구조로 쓴다<br>(재파싱하면 줄 번호가 바뀜). 다시 찾을 때는 source_quote 를 본문에서 검색한다.</p><div class="scroll"><table><thead><tr><th>칸</th><th>타입</th><th>제약</th><th>설명</th></tr></thead><tbody><tr><td><code>id</code></td><td class="ty">INTEGER</td><td><span class="b pk">PK</span></td><td></td></tr><tr><td><code>notice_no</code></td><td class="ty">TEXT</td><td><span class="b fk">FK→bid_notice</span><span class="b nn">필수</span></td><td></td></tr><tr><td><code>parent_id</code></td><td class="ty">INTEGER</td><td><span class="b fk">FK→evaluation_rule</span></td><td>상위 항목 (최상위는 NULL)</td></tr><tr><td><code>position</code></td><td class="ty">INTEGER</td><td><span class="b nn">필수</span></td><td>공고 안 표시 순서</td></tr><tr><td><code>category</code></td><td class="ty">TEXT</td><td><span class="b nn">필수</span></td><td><span class=al>PRICE · PERFORMANCE · MANAGEMENT · OFFICE · BONUS · PENALTY · PASS_SCORE</span></td></tr><tr><td><code>item_name</code></td><td class="ty">TEXT</td><td><span class="b nn">필수</span></td><td>원문 항목명 그대로 (예: 시공경험, 부채비율)</td></tr><tr><td><code>rule_type</code></td><td class="ty">TEXT</td><td><span class="b nn">필수</span></td><td><span class=al>GROUP · FORMULA · TABLE · FIXED · THRESHOLD</span></td></tr><tr><td><code>max_score</code></td><td class="ty">REAL</td><td></td><td>배점(점). 감점은 음수 한도, 통과점수 행은 NULL</td></tr><tr><td><code>formula</code></td><td class="ty">TEXT</td><td></td><td>FORMULA: 산식 (예: 50-2×|(90/100)-(입찰가격/예정가격)|×100)</td></tr><tr><td><code>formula_source</code></td><td class="ty">TEXT</td><td></td><td><span class=al>EQUATION · TEXT · IMAGE</span><br>산식이 어디서 왔는지</td></tr><tr><td><code>image_path</code></td><td class="ty">TEXT</td><td></td><td>IMAGE: 꺼낸 그림 파일 (LLM이 읽을 대상)</td></tr><tr><td><code>parameters</code></td><td class="ty">TEXT</td><td></td><td>JSON, 형식은 위 설명</td></tr><tr><td><code>input_key</code></td><td class="ty">TEXT</td><td></td><td>업체 입력값 종류 (화면 입력칸을 정하는 값)<br><span class=al>bid_price · performance_amount · same_kind_amount · similar_amount · debt_ratio · current_ratio · equity_ratio · business_years · credit_grade · office_location · trained_workers · developed_workers · engineer_days · equipment_owned · bonus_grade · bonus_count · bonus_ratio · tech_dev · pq_grade · pq_check · pq_score</span></td></tr><tr><td><code>rounding_digits</code></td><td class="ty">INTEGER</td><td></td><td>소수점 몇째 자리까지 남기는지. NULL = 원문에 규칙 없음</td></tr><tr><td><code>rounding_mode</code></td><td class="ty">TEXT</td><td></td><td><span class=al>ROUND · FLOOR · CEIL</span></td></tr><tr><td><code>attachment_id</code></td><td class="ty">INTEGER</td><td><span class="b fk">FK→bid_attachment</span></td><td>근거 문서</td></tr><tr><td><code>source_sha256</code></td><td class="ty">TEXT</td><td></td><td>추출에 쓴 문서 파일 지문 (정정 후에도 어느 버전인지 확인)</td></tr><tr><td><code>source_location</code></td><td class="ty">TEXT</td><td></td><td>문서 안 위치 (구조 경로)</td></tr><tr><td><code>source_quote</code></td><td class="ty">TEXT</td><td></td><td>해당 문구</td></tr><tr><td><code>verification_status</code></td><td class="ty">TEXT</td><td><span class="b nn">필수</span><span class="b etc">기본값 &#x27;UNVERIFIED&#x27;</span></td><td><span class=al>UNVERIFIED · VERIFIED · REVIEW</span></td></tr><tr><td><code>updated_by</code></td><td class="ty">TEXT</td><td><span class="b nn">필수</span><span class="b etc">기본값 &#x27;PARSER&#x27;</span></td><td><span class=al>PARSER · LLM · USER</span></td></tr><tr><td><code>extracted_at</code></td><td class="ty">TEXT</td><td><span class="b nn">필수</span></td><td></td></tr><tr><td><code>updated_at</code></td><td class="ty">TEXT</td><td><span class="b nn">필수</span></td><td></td></tr></tbody></table></div><div class="ex"><code>UNIQUE (notice_no, position)</code></div></article>
+<article class="tbl" id="t-company_uploaded_criteria"><h3><code>company_uploaded_criteria</code><span>15칸</span></h3><p>업체가 직접 올린 적격심사기준 (zip 이거나 수집기가 기준서를 못 찾은 공고). 올린 업체만 쓴다 → 공용 evaluation_rule 은 안 건드림.<br>원본 파일은 저장하지 않고 전처리한 본문과 규칙 추출 결과(JSON)만 남긴다. 업체·공고당 1건 (다시 올리면 덮어씀)<br>공용 배점(evaluation_rule)이 없는 공고에서만 점수 계산에 쓴다</p><div class="scroll"><table><thead><tr><th>칸</th><th>타입</th><th>제약</th><th>설명</th></tr></thead><tbody><tr><td><code>company_id</code></td><td class="ty">TEXT</td><td><span class="b pk">PK</span><span class="b fk">FK→company</span><span class="b nn">필수</span></td><td></td></tr><tr><td><code>notice_no</code></td><td class="ty">TEXT</td><td><span class="b pk">PK</span><span class="b fk">FK→bid_notice</span><span class="b nn">필수</span></td><td></td></tr><tr><td><code>filename</code></td><td class="ty">TEXT</td><td><span class="b nn">필수</span></td><td></td></tr><tr><td><code>file_ext</code></td><td class="ty">TEXT</td><td></td><td></td></tr><tr><td><code>size_bytes</code></td><td class="ty">INTEGER</td><td></td><td></td></tr><tr><td><code>sha256</code></td><td class="ty">TEXT</td><td></td><td></td></tr><tr><td><code>read_status</code></td><td class="ty">TEXT</td><td><span class="b nn">필수</span></td><td><span class=al>SUCCESS · FAILED</span></td></tr><tr><td><code>text</code></td><td class="ty">TEXT</td><td></td><td>전처리한 본문 (bid_document_content.text 와 같은 형식)</td></tr><tr><td><code>error</code></td><td class="ty">TEXT</td><td></td><td>본문을 못 읽은 이유</td></tr><tr><td><code>rule_extracted</code></td><td class="ty">INTEGER</td><td></td><td><span class=al>0 · 1</span><br>1 = 규칙으로 다 뽑음, 0 = 못 뽑음(LLM 대상)</td></tr><tr><td><code>rules</code></td><td class="ty">TEXT</td><td><span class="b nn">필수</span><span class="b etc">기본값 '[]'</span></td><td>JSON: evaluation_rule 행과 같은 모양의 목록 (parent = 목록 번호)</td></tr><tr><td><code>issues</code></td><td class="ty">TEXT</td><td><span class="b nn">필수</span><span class="b etc">기본값 '[]'</span></td><td>JSON: 규칙 추출에서 막힌 이유</td></tr><tr><td><code>rules_updated_by</code></td><td class="ty">TEXT</td><td><span class="b nn">필수</span><span class="b etc">기본값 'PARSER'</span></td><td><span class=al>PARSER · LLM · USER</span></td></tr><tr><td><code>uploaded_by</code></td><td class="ty">TEXT</td><td><span class="b fk">FK→app_user</span></td><td></td></tr><tr><td><code>uploaded_at</code></td><td class="ty">TEXT</td><td><span class="b nn">필수</span></td><td></td></tr></tbody></table></div><div class="ex"><code>PRIMARY KEY (company_id, notice_no)</code></div></article>
+<article class="tbl" id="t-company_evaluation_draft"><h3><code>company_evaluation_draft</code><span>8칸</span></h3><p>업체의 점수 시뮬레이션 입력·결과 (입찰가격·예정가격은 사용자 입력). 업체·공고당 직전 1건만 (다시 하면 덮어씀)<br>Q&amp;A 봇이 &#x27;저번 시뮬레이션 결과&#x27;를 답할 때도 이 행을 쓴다 → 요청 사용자의 ACTIVE 소속 업체 행만 내준다</p><div class="scroll"><table><thead><tr><th>칸</th><th>타입</th><th>제약</th><th>설명</th></tr></thead><tbody><tr><td><code>company_id</code></td><td class="ty">TEXT</td><td><span class="b pk">PK</span><span class="b fk">FK→company</span><span class="b nn">필수</span></td><td></td></tr><tr><td><code>notice_no</code></td><td class="ty">TEXT</td><td><span class="b pk">PK</span><span class="b fk">FK→bid_notice</span><span class="b nn">필수</span></td><td></td></tr><tr><td><code>inputs</code></td><td class="ty">TEXT</td><td><span class="b nn">필수</span><span class="b etc">기본값 &#x27;{}&#x27;</span></td><td>JSON (입찰가격, 예정가격, 실적누계액, 재무비율 ...)</td></tr><tr><td><code>item_scores</code></td><td class="ty">TEXT</td><td><span class="b nn">필수</span><span class="b etc">기본값 &#x27;{}&#x27;</span></td><td>JSON (항목별 점수, 미산정 항목은 null)</td></tr><tr><td><code>total_score</code></td><td class="ty">REAL</td><td></td><td>모든 필수 항목 산정 시에만</td></tr><tr><td><code>calculation_status</code></td><td class="ty">TEXT</td><td><span class="b nn">필수</span><span class="b etc">기본값 &#x27;IN_PROGRESS&#x27;</span></td><td><span class=al>IN_PROGRESS · CALCULATED · ON_HOLD</span></td></tr><tr><td><code>updated_by</code></td><td class="ty">TEXT</td><td><span class="b fk">FK→app_user</span></td><td>마지막으로 돌린 사용자</td></tr><tr><td><code>updated_at</code></td><td class="ty">TEXT</td><td><span class="b nn">필수</span></td><td></td></tr></tbody></table></div><div class="ex"><code>PRIMARY KEY (company_id, notice_no)</code></div></article>
+</section>
+<section class="area" id="a06"><div class="area-head"><h2>F. 필요서류·관심·일정·알림</h2><code>06_notice_workflow.sql</code></div>
+<ul class="head"><li>쓰는 모듈:</li><li>required_document_item  → LLM 추출 저장 (칸 형식은 AI 파트와 확정)</li><li>company_document_check  → (예정) 서류 체크 API ← 프론트 필요서류 탭(UI-05). 자동 심사 입력</li><li>favorite_notice         → backend/favorites.py (관심공고 API) ← 프론트 별표 토글(UI-01·06), 사용자 개인별</li><li>notice_schedule_event   → (예정) 수집기 또는 백엔드 (API 일정 + SRM 개찰일시 + 문서 추출 제출기한) — 팀 결정 필요</li><li>notice_notification     → (예정) 알림 발송 모듈 — 담당 팀 결정 필요 (기획서상 알림 연동은 AI 팀)</li><li>읽는 모듈: (예정) 필요서류 탭·달력·추천 목록 API, 알림 발송</li><li>의존: 02_company.sql, 03_bid_collection.sql</li></ul>
+<article class="tbl" id="t-required_document_item"><h3><code>required_document_item</code><span>13칸</span></h3><p>공고별 필요서류 (공고문 + 적격심사기준에서 추출)</p><div class="scroll"><table><thead><tr><th>칸</th><th>타입</th><th>제약</th><th>설명</th></tr></thead><tbody><tr><td><code>id</code></td><td class="ty">INTEGER</td><td><span class="b pk">PK</span></td><td></td></tr><tr><td><code>notice_no</code></td><td class="ty">TEXT</td><td><span class="b fk">FK→bid_notice</span><span class="b nn">필수</span></td><td></td></tr><tr><td><code>stage</code></td><td class="ty">TEXT</td><td><span class="b nn">필수</span></td><td><span class=al>BASIC · ELIGIBILITY · QUALIFICATION · SUPERVISOR</span><br>1) 입찰참가신청 및 기본서류 2) 입찰참가자격 증명 서류 3) 적격심사서류 라) 감독부서 제출서류(인원장비 서류심사)</td></tr><tr><td><code>submit_to</code></td><td class="ty">TEXT</td><td><span class="b nn">필수</span><span class="b etc">기본값 &#x27;CONTRACT_DEPT&#x27;</span></td><td><span class=al>CONTRACT_DEPT · SUPERVISOR_DEPT</span></td></tr><tr><td><code>position</code></td><td class="ty">INTEGER</td><td><span class="b nn">필수</span></td><td></td></tr><tr><td><code>name</code></td><td class="ty">TEXT</td><td><span class="b nn">필수</span></td><td></td></tr><tr><td><code>requirement_type</code></td><td class="ty">TEXT</td><td><span class="b nn">필수</span></td><td><span class=al>REQUIRED · CONDITIONAL · OPTIONAL</span></td></tr><tr><td><code>alternative_group</code></td><td class="ty">TEXT</td><td></td><td>&#x27;택1&#x27; 묶음: 같은 값끼리 하나만 충족하면 됨</td></tr><tr><td><code>condition_note</code></td><td class="ty">TEXT</td><td></td><td>예: 가점 필요시, 1억 이상일 시, 원본대조필 필수</td></tr><tr><td><code>validity_note</code></td><td class="ty">TEXT</td><td></td><td>예: 입찰공고일 기준 최근 2년간</td></tr><tr><td><code>source_attachment_id</code></td><td class="ty">INTEGER</td><td><span class="b fk">FK→bid_attachment</span></td><td></td></tr><tr><td><code>source_location</code></td><td class="ty">TEXT</td><td></td><td></td></tr><tr><td><code>verification_status</code></td><td class="ty">TEXT</td><td><span class="b nn">필수</span><span class="b etc">기본값 &#x27;UNVERIFIED&#x27;</span></td><td><span class=al>UNVERIFIED · VERIFIED · REVIEW</span></td></tr></tbody></table></div><div class="ex"><code>UNIQUE (notice_no, stage, position)</code></div></article>
+<article class="tbl" id="t-company_document_check"><h3><code>company_document_check</code><span>5칸</span></h3><p>업체별 서류 준비 체크 (자동 심사 입력). 발급일은 사용자가 선택 입력, 비면 유효기간 판단은 &#x27;확인 필요&#x27;<br>같은 업체가 다른 공고에서 입력한 같은 서류의 발급일은 API가 다시 보여 준다</p><div class="scroll"><table><thead><tr><th>칸</th><th>타입</th><th>제약</th><th>설명</th></tr></thead><tbody><tr><td><code>company_id</code></td><td class="ty">TEXT</td><td><span class="b pk">PK</span><span class="b fk">FK→company</span><span class="b nn">필수</span></td><td></td></tr><tr><td><code>item_id</code></td><td class="ty">INTEGER</td><td><span class="b pk">PK</span><span class="b fk">FK→required_document_item</span><span class="b nn">필수</span></td><td></td></tr><tr><td><code>status</code></td><td class="ty">TEXT</td><td><span class="b nn">필수</span></td><td><span class=al>READY · NOT_READY · NOT_APPLICABLE · REVIEW</span></td></tr><tr><td><code>issued_at</code></td><td class="ty">TEXT</td><td></td><td>서류 발급일 YYYY-MM-DD (선택)</td></tr><tr><td><code>updated_at</code></td><td class="ty">TEXT</td><td><span class="b nn">필수</span></td><td></td></tr></tbody></table></div><div class="ex"><code>PRIMARY KEY (company_id, item_id)</code></div></article>
+<article class="tbl" id="t-favorite_notice"><h3><code>favorite_notice</code><span>3칸</span></h3><p>관심공고 (별표) — 사용자 개인별. 캘린더도 내 관심공고만 보여 준다</p><div class="scroll"><table><thead><tr><th>칸</th><th>타입</th><th>제약</th><th>설명</th></tr></thead><tbody><tr><td><code>user_id</code></td><td class="ty">TEXT</td><td><span class="b pk">PK</span><span class="b fk">FK→app_user</span><span class="b nn">필수</span></td><td></td></tr><tr><td><code>notice_no</code></td><td class="ty">TEXT</td><td><span class="b pk">PK</span><span class="b fk">FK→bid_notice</span><span class="b nn">필수</span></td><td></td></tr><tr><td><code>created_at</code></td><td class="ty">TEXT</td><td><span class="b nn">필수</span></td><td></td></tr></tbody></table></div><div class="ex"><code>PRIMARY KEY (user_id, notice_no)</code></div></article>
+<article class="tbl" id="t-notice_schedule_event"><h3><code>notice_schedule_event</code><span>7칸</span></h3><p>달력 일정. 적격심사서류 제출기한은 통보서 접수일로부터 5일 이상 지정(적격심사기준 제8조 ②)이라<br>개찰 전에는 확정 불가 → confirmed=0 인 참고 일정(개찰일+7일)으로 표시</p><div class="scroll"><table><thead><tr><th>칸</th><th>타입</th><th>제약</th><th>설명</th></tr></thead><tbody><tr><td><code>id</code></td><td class="ty">INTEGER</td><td><span class="b pk">PK</span></td><td></td></tr><tr><td><code>notice_no</code></td><td class="ty">TEXT</td><td><span class="b fk">FK→bid_notice</span><span class="b nn">필수</span></td><td></td></tr><tr><td><code>event_type</code></td><td class="ty">TEXT</td><td><span class="b nn">필수</span></td><td><span class=al>ATTEND_REQ_BEGIN · ATTEND_REQ_CLOSE · BID_BEGIN · BID_END · OPEN_BID · QUALIFICATION_DOC_DUE · FIELD_INTRO</span></td></tr><tr><td><code>event_at</code></td><td class="ty">TEXT</td><td></td><td></td></tr><tr><td><code>source</code></td><td class="ty">TEXT</td><td><span class="b nn">필수</span></td><td><span class=al>OPEN_API · SRM · DOCUMENT · ESTIMATED</span></td></tr><tr><td><code>confirmed</code></td><td class="ty">INTEGER</td><td><span class="b nn">필수</span><span class="b etc">기본값 1</span></td><td><span class=al>0 · 1</span></td></tr><tr><td><code>note</code></td><td class="ty">TEXT</td><td></td><td></td></tr></tbody></table></div><div class="ex"><code>UNIQUE (notice_no, event_type)</code></div></article>
+<article class="tbl" id="t-notice_notification"><h3><code>notice_notification</code><span>10칸</span></h3><p>알림 발송 이력 (중복 발송 방지) — 수신 설정이 사용자 단위라 이력도 사용자 단위.<br>company_id 는 어느 소속 업체의 맞춤 판정으로 보냈는지 기록 (업체 삭제 시 이력은 남김)</p><div class="scroll"><table><thead><tr><th>칸</th><th>타입</th><th>제약</th><th>설명</th></tr></thead><tbody><tr><td><code>id</code></td><td class="ty">INTEGER</td><td><span class="b pk">PK</span></td><td></td></tr><tr><td><code>user_id</code></td><td class="ty">TEXT</td><td><span class="b fk">FK→app_user</span><span class="b nn">필수</span></td><td></td></tr><tr><td><code>company_id</code></td><td class="ty">TEXT</td><td><span class="b fk">FK→company</span></td><td></td></tr><tr><td><code>notice_no</code></td><td class="ty">TEXT</td><td><span class="b fk">FK→bid_notice</span><span class="b nn">필수</span></td><td></td></tr><tr><td><code>channel</code></td><td class="ty">TEXT</td><td><span class="b nn">필수</span></td><td><span class=al>EMAIL · TELEGRAM</span></td></tr><tr><td><code>reason</code></td><td class="ty">TEXT</td><td><span class="b nn">필수</span><span class="b etc">기본값 &#x27;NEW&#x27;</span></td><td><span class=al>NEW · CORRECTED · CANCELLED</span></td></tr><tr><td><code>send_status</code></td><td class="ty">TEXT</td><td><span class="b nn">필수</span></td><td><span class=al>PENDING · SENT · FAILED</span></td></tr><tr><td><code>error</code></td><td class="ty">TEXT</td><td></td><td></td></tr><tr><td><code>sent_at</code></td><td class="ty">TEXT</td><td></td><td></td></tr><tr><td><code>created_at</code></td><td class="ty">TEXT</td><td><span class="b nn">필수</span></td><td></td></tr></tbody></table></div><div class="ex"><code>UNIQUE (user_id, notice_no, channel, reason)</code></div></article>
+<p class="tail">표준 제출서류 목록(document_template_item)은 2026-11-21 뺐다 (공고별 필요서류는 LLM 추출로 대체)</p>
+</section>
+<section class="area" id="a07"><div class="area-head"><h2>뷰</h2><code>07_views.sql</code></div><article class="tbl" id="t-v_recommendation"><h3><code>v_recommendation</code></h3><p>추천 목록 후보: 진행 중인 한전 적격심사 공사용역 공고 + 업체별 판정 결과 (MISMATCH 제외는 API에서)<br>progressState 는 마감 후에도 &#x27;AttendProgress&#x27;로 남는 경우가 많아 입찰참가신청 마감 일시도 확인한다.<br>관심공고는 사용자 개인별이라 뷰에 넣지 않는다 → API가 로그인 사용자의 favorite_notice 와 합친다.<br>뷰는 결과를 저장하지 않는 &#x27;이름 붙인 조회문&#x27;이라 열 때마다 원본 표를 읽는다 (조건을 한 곳에서 관리하는 용도).</p><pre class="sql">SELECT e.company_id, n.notice_no, n.title, n.place_name, n.work_type,
+       n.attend_req_close_at, n.bid_end_at, n.presumed_price,
+       e.overall_status, e.reason
+FROM bid_notice n
+JOIN company_bid_eligibility e ON e.notice_no = n.notice_no
+WHERE n.company_id_src = &#x27;COM01&#x27;
+  AND n.purchase_type = &#x27;ConstructionService&#x27;
+  AND n.bid_type = &#x27;QualifiedEval&#x27;
+  AND n.is_open = 1
+  AND (n.attend_req_close_at IS NULL OR n.attend_req_close_at &gt;= datetime(&#x27;now&#x27;, &#x27;localtime&#x27;))</pre></article></section>
+  </main>
+</div>
+
+<!--claude-mermaid-runtime-begin:3477-->
+<style>.mermaid-diagram{margin-block:4px}.mermaid-diagram svg{display:block;margin:0 auto;max-width:100%;height:auto}</style>
+<script src="/_runtime/mermaid-11.16.1.min.js"></script>
+<script>(function(){
+var CFG={"palettes":{"light":{"surface":"#f4efe4","text":"#42392e","line":"#8a7f6d","border":"#7a6c52","bg":"#fffdf8"},"dark":{"surface":"#262b34","text":"#f2f3f5","line":"#a8adb8","border":"#9aa4b8","bg":"#1f232b"}}};
+if(typeof mermaid==='undefined')return;
+var pres=Array.prototype.slice.call(document.querySelectorAll('pre.mermaid')).filter(function(p){if(p.hasAttribute('data-claude-mermaid-claimed'))return false;p.setAttribute('data-claude-mermaid-claimed','1');return true;});
+if(!pres.length)return;
+var mq=window.matchMedia?window.matchMedia('(prefers-color-scheme: dark)'):null;
+var root=document.documentElement;
+var items=pres.map(function(pre){
+var mount=document.createElement('div');mount.className='mermaid-diagram';
+return {pre:pre,mount:mount,src:pre.textContent||''};
+});
+var seq=0;
+var renderGen=0;
+var lastKey='';
+function pageBg(fallback){
+var els=[document.body,document.documentElement];
+for(var i=0;i<els.length;i++){
+var c=els[i]&&getComputedStyle(els[i]).backgroundColor;
+if(c&&c!=='transparent'&&c!=='rgba(0, 0, 0, 0)')return c;
+}
+return fallback;
+}
+function render(){
+var theme=root.getAttribute('data-theme');
+var dark=theme==='dark'||(!!(mq&&mq.matches)&&theme!=='light');
+var pal=dark?CFG.palettes.dark:CFG.palettes.light;
+var bg=pageBg(pal.bg);
+var key=(dark?'d':'l')+'|'+bg;
+if(key===lastKey)return;
+lastKey=key;
+var gen=++renderGen;
+var font=getComputedStyle(document.body).fontFamily||'sans-serif';
+var nat={useMaxWidth:false};
+mermaid.initialize({
+startOnLoad:false,securityLevel:'strict',theme:'base',
+flowchart:nat,sequence:nat,er:nat,state:nat,class:nat,pie:nat,
+gantt:nat,journey:nat,timeline:nat,gitGraph:nat,mindmap:nat,xyChart:nat,
+quadrantChart:nat,sankey:nat,c4:nat,requirement:nat,block:nat,
+packet:nat,kanban:nat,architecture:nat,radar:nat,
+themeVariables:{background:bg,mainBkg:pal.surface,primaryColor:pal.surface,
+primaryTextColor:pal.text,lineColor:pal.line,primaryBorderColor:pal.border,
+nodeBorder:pal.border,clusterBorder:pal.border,edgeLabelBackground:bg,
+clusterBkg:'rgba(127,127,127,0.07)',titleColor:pal.text,
+darkMode:dark,rowOdd:bg,rowEven:'rgba(127,127,127,0.07)',
+attributeBackgroundColorOdd:bg,attributeBackgroundColorEven:'rgba(127,127,127,0.07)',
+fontSize:'16px',fontFamily:font},
+themeCSS:'.node rect, .node circle, .node polygon, .node path, .cluster rect { stroke-width: 2px; }'
+});
+items.forEach(function(it){
+var id='claude-mermaid-'+seq++;
+mermaid.render(id,it.src).then(function(r){
+if(gen!==renderGen)return;
+var prev=it.pre.previousElementSibling;
+if(prev&&prev.className==='mermaid-diagram'&&prev!==it.mount)return;
+it.mount.innerHTML=r.svg;
+if(!it.mount.parentNode)it.pre.parentNode.insertBefore(it.mount,it.pre);
+it.pre.style.display='none';
+},function(){
+var scratch=document.getElementById(id);
+if(scratch)scratch.parentNode.removeChild(scratch);
+scratch=document.getElementById('d'+id);
+if(scratch)scratch.parentNode.removeChild(scratch);
+if(gen!==renderGen)return;
+if(it.mount.parentNode)it.mount.parentNode.removeChild(it.mount);
+it.pre.style.display='';
+});
+});
+}
+render();
+if(mq&&mq.addEventListener)mq.addEventListener('change',render);
+if(typeof MutationObserver!=='undefined')new MutationObserver(render).observe(root,{attributes:true,attributeFilter:['data-theme']});
+})();</script>
+<!--claude-mermaid-runtime-end-->
+
+<!--claude-mermaid-runtime-begin:3847-->
+<style>.mermaid-diagram{margin-block:4px}.mermaid-diagram svg{display:block;margin:0 auto;max-width:100%;height:auto}</style>
+<script src="/_runtime/mermaid-11.16.1.min.js"></script>
+<script>(function(){
+var CFG={"palettes":{"light":{"surface":"#f4efe4","text":"#42392e","line":"#8a7f6d","border":"#7a6c52","bg":"#fffdf8"},"dark":{"surface":"#262b34","text":"#f2f3f5","line":"#a8adb8","border":"#9aa4b8","bg":"#1f232b"}}};
+if(typeof mermaid==='undefined')return;
+var pres=Array.prototype.slice.call(document.querySelectorAll('pre.mermaid')).filter(function(p){if(p.hasAttribute('data-claude-mermaid-claimed'))return false;p.setAttribute('data-claude-mermaid-claimed','1');return true;});
+if(!pres.length)return;
+var mq=window.matchMedia?window.matchMedia('(prefers-color-scheme: dark)'):null;
+var root=document.documentElement;
+function source(el){
+var out='';
+for(var n=el.firstChild;n;n=n.nextSibling){
+if(n.nodeType===3)out+=n.data;
+else if(n.nodeName==='BR')out+='<br>';
+else if(n.nodeType===1)out+=(out.slice(-1)==='<'&&n.textContent[0]==='>'?'<'+n.localName+'>':'')+source(n);
+}
+return out;
+}
+var items=pres.map(function(pre){
+var mount=document.createElement('div');mount.className='mermaid-diagram';
+return {pre:pre,mount:mount,src:source(pre),text:pre.textContent};
+});
+var seq=0;
+var renderGen=0;
+var lastKey='';
+function pageBg(fallback){
+var els=[document.body,document.documentElement];
+for(var i=0;i<els.length;i++){
+var c=els[i]&&getComputedStyle(els[i]).backgroundColor;
+if(c&&c!=='transparent'&&c!=='rgba(0, 0, 0, 0)')return c;
+}
+return fallback;
+}
+function render(){
+var theme=root.getAttribute('data-theme');
+var dark=theme==='dark'||(!!(mq&&mq.matches)&&theme!=='light');
+var pal=dark?CFG.palettes.dark:CFG.palettes.light;
+var bg=pageBg(pal.bg);
+var key=(dark?'d':'l')+'|'+bg;
+if(key===lastKey)return;
+lastKey=key;
+var gen=++renderGen;
+var font=getComputedStyle(document.body).fontFamily||'sans-serif';
+var nat={useMaxWidth:false};
+mermaid.initialize({
+startOnLoad:false,securityLevel:'strict',theme:'base',
+flowchart:nat,sequence:nat,er:nat,state:nat,class:nat,pie:nat,
+gantt:nat,journey:nat,timeline:nat,gitGraph:nat,mindmap:nat,xyChart:nat,
+quadrantChart:nat,sankey:nat,c4:nat,requirement:nat,block:nat,
+packet:nat,kanban:nat,architecture:nat,radar:nat,
+themeVariables:{background:bg,mainBkg:pal.surface,primaryColor:pal.surface,
+primaryTextColor:pal.text,lineColor:pal.line,primaryBorderColor:pal.border,
+nodeBorder:pal.border,clusterBorder:pal.border,edgeLabelBackground:bg,
+clusterBkg:'rgba(127,127,127,0.07)',titleColor:pal.text,
+darkMode:dark,rowOdd:bg,rowEven:'rgba(127,127,127,0.07)',
+attributeBackgroundColorOdd:bg,attributeBackgroundColorEven:'rgba(127,127,127,0.07)',
+fontSize:'16px',fontFamily:font},
+themeCSS:'.node rect, .node circle, .node polygon, .node path, .cluster rect { stroke-width: 2px; }'
+});
+items.forEach(function(it){
+var id='claude-mermaid-'+seq++;
+mermaid.render(id,it.src).catch(function(e){
+if(it.src===it.text)throw e;
+return mermaid.render(id,it.text);
+}).then(function(r){
+if(gen!==renderGen)return;
+var prev=it.pre.previousElementSibling;
+if(prev&&prev.className==='mermaid-diagram'&&prev!==it.mount)return;
+it.mount.innerHTML=r.svg;
+if(!it.mount.parentNode)it.pre.parentNode.insertBefore(it.mount,it.pre);
+it.pre.style.display='none';
+},function(){
+var scratch=document.getElementById(id);
+if(scratch)scratch.parentNode.removeChild(scratch);
+scratch=document.getElementById('d'+id);
+if(scratch)scratch.parentNode.removeChild(scratch);
+if(gen!==renderGen)return;
+if(it.mount.parentNode)it.mount.parentNode.removeChild(it.mount);
+it.pre.style.display='';
+});
+});
+}
+render();
+if(mq&&mq.addEventListener)mq.addEventListener('change',render);
+if(typeof MutationObserver!=='undefined')new MutationObserver(render).observe(root,{attributes:true,attributeFilter:['data-theme']});
+})();</script>
+<!--claude-mermaid-runtime-end-->
+
+</body></html>

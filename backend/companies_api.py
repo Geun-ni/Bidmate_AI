@@ -281,10 +281,10 @@ def update_company(db, company_id, body, user):
 def save_evaluation(db, company_id, notice_no, inputs, user):
     if get_company(db, company_id, user) is None:
         return None
-    result = scoring.calculate(db, notice_no, inputs)
+    result = scoring.calculate(db, notice_no, inputs, company_id=company_id)
     if result is None:
         return None
-    status = {"CALCULATED": "CALCULATED", "IN_PROGRESS": "IN_PROGRESS"}.get(result["status"], "ON_HOLD")
+    status ={"CALCULATED": "CALCULATED", "IN_PROGRESS": "IN_PROGRESS"}.get(result["status"], "ON_HOLD")
     with db:
         db.execute("""INSERT INTO company_evaluation_draft (company_id, notice_no, inputs, item_scores, total_score,
                       calculation_status, updated_at, updated_by) VALUES (?,?,?,?,?,?,?,?)

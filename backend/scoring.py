@@ -282,11 +282,15 @@ def _price(node, inputs, ctx):
     return _result(node, round(score, 4), note=note, ratio=ratio, a_amount=a if p.get("subtract_a") else None)
 
 
-def calculate(db, notice_no, inputs):
-    """→ {status, total, pass_score, gap, items:[…]} 또는 None(공고 없음)"""
+def calculate(db, notice_no, inputs, company_id=None):
+    """→ {status, total, pass_score, gap, items:[…]} 또는 None(공고 없음).
+    company_id: 공용 배점이 없을 때 그 업체가 올린 기준서(company_uploaded_criteria) 배점을 쓴다 (권한 확인은 호출자)."""
     ev = notices_api.get_evaluation(db, notice_no)
     if ev is None:
         return None
+    if not ev["rules"] and company_id:
+        from backend import uploaded_criteria
+        ev = uploaded_criteria.evaluation(db, company_id, notice_no) or ev
     if not ev["rules"]:
         return {"notice_no": notice_no, "status": HOLD, "reason": ev["reason"], "total": None, "items": []}
     a = db.execute("SELECT a_amount FROM bid_notice WHERE notice_no=?", (notice_no,)).fetchone()

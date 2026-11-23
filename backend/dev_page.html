@@ -103,6 +103,11 @@
   <button onclick="score(true)">점수 계산 + 저장 (업체 ID 필요)</button>
   <button onclick="withCid(async id => { const r = await call('GET', '/api/companies/' + id + '/evaluation-drafts/' + v('notice2')); if (r.data && r.data.inputs) fillForm(r.data.inputs); })">저장한 점수 불러오기</button>
   <div id="result"></div>
+  <p class="hint">기준서를 못 찾은 공고: 업체 ID를 채우고 적격심사기준 파일(hwp·hwpx·pdf)을 올리면 그 업체만 배점·점수 계산에 씀</p>
+  <input type="file" id="critFile" accept=".hwp,.hwpx,.pdf">
+  <button onclick="withCid(uploadCriteria)">기준서 올리기</button>
+  <button onclick="withCid(id => call('GET', `/api/companies/${id}/uploaded-criteria/${v('notice2')}`))">올린 기준서 보기</button>
+  <button onclick="withCid(id => call('DELETE', `/api/companies/${id}/uploaded-criteria/${v('notice2')}`))">올린 기준서 지우기</button>
 </section>
 
 <section>
@@ -356,8 +361,12 @@ async function toggleRules() {
 
 async function buildForm() {
   if (!v('notice2')) { alert('공고번호를 입력하세요.'); return; }
-  const r = await call('GET', '/api/notices/' + v('notice2') + '/evaluation');
+  let r = await call('GET', '/api/notices/' + v('notice2') + '/evaluation');
   const box = document.getElementById('form');
+  if (r.data && r.data.rules && !r.data.rules.length && v('cid')) {  // 공용 배점이 없으면 내 업체가 올린 기준서
+    const up = await call('GET', `/api/companies/${v('cid')}/uploaded-criteria/${v('notice2')}`);
+    if (up.data && up.data.evaluation) r = { data: up.data.evaluation };
+  }
   if (!r.data || !r.data.rules || !r.data.rules.length) {
     box.innerHTML = `<p>배점 없음: ${esc(r.data && (r.data.reason || r.data.error))}</p>`;
     return;
@@ -402,12 +411,23 @@ function resultRows(items, depth) {
   }).join('');
 }
 
+async function uploadCriteria(id) {  // 파일을 본문 그대로 PUT (?filename=)
+  const f = document.getElementById('critFile').files[0];
+  if (!f || !v('notice2')) { alert('공고번호와 파일을 고르세요.'); return; }
+  const path = `/api/companies/${id}/uploaded-criteria/${v('notice2')}?filename=${encodeURIComponent(f.name)}`;
+  const res = await fetch(path, { method: 'PUT', body: f });
+  const text = await res.text();
+  document.getElementById('status').textContent = `PUT ${path} → ${res.status}`;
+  try { document.getElementById('out').textContent = JSON.stringify(JSON.parse(text), null, 2); }
+  catch { document.getElementById('out').textContent = text; }
+}
+
 async function score(save) {
   if (!document.querySelector('#form table')) { alert('먼저 [점수 입력칸 만들기]를 누르세요.'); return; }
   const inputs = collectInputs();
   const r = save
     ? await withCid(id => call('PUT', `/api/companies/${id}/evaluation-drafts/${v('notice2')}`, { inputs }))
-    : await call('POST', `/api/notices/${v('notice2')}/score`, { inputs });
+    : await call('POST', `/api/notices/${v('notice2')}/score`, { inputs, company_id: v('cid') || undefined });
   if (!r || !r.data || !r.data.items) return;
   const d = r.data;
   const head = d.total == null

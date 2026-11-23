@@ -33,6 +33,7 @@ python -m backend.server
 | `GET /api/companies/lookup?brn=사업자등록번호` · 가입 때 `join_company_id` | 기존 업체 합류: 사업자번호로 업체를 찾아 가입하면 합류 요청(PENDING)이 되고, 소유자가 승인해야 업체 정보를 볼 수 있다. 내 업체 목록의 `join_requests`에 요청 상태가 나온다 |
 | `GET /api/companies/<업체ID>/members` · `PUT …/members/<사용자ID>` | 소유자·관리자: 소속·합류 요청 목록, 승인(`{"status": "ACTIVE"}`)·거절(`REJECTED`) |
 | `PUT/GET /api/companies/<업체ID>/evaluation-drafts/<공고번호>` | 점수 계산 후 저장 / 직전 계산 결과 조회 (업체·공고당 1건) |
+| `PUT/GET/DELETE /api/companies/<업체ID>/uploaded-criteria/<공고번호>` | 기준서를 못 찾은 공고에 적격심사기준 파일 직접 올리기 (본문 = 파일, `?filename=`, hwp·hwpx·pdf 20MB까지) / 올린 기준서·배점 조회 / 지우기. 올린 업체만 씀, 공용 배점이 없을 때 점수 계산(`POST .../score` 에 `company_id`)에 사용 |
 | `GET /api/notices/<공고번호>/evaluation` | 적격심사 배점·산식 계층(`rules`: 통과점수·입찰가격 산식·수행능력 분야와 세부 표·가감점·결격) + 요약(`summary`). 배점이 없으면 `status: "확인 필요"`와 이유(기준서 없음, AI 분석 대기 등) |
 | `GET /api/demo` | 가상 업체 프로필과 룰을 통과한 공고 목록 (기본 화면이 사용) |
 
