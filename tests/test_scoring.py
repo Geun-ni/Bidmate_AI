@@ -185,6 +185,77 @@ class DirectInputTest(unittest.TestCase):
         self.assertEqual(leaf(0.4, 1), 0.4)       # 가점은 0 ~ 한도
 
 
+class ExceptionRuleTest(unittest.TestCase):
+    """원문 대조로 보강한 규칙: OF전기원 예외 점수, 배치기술자 단기 재직 80%, 여성기업 존속기간 구간"""
+
+    def node(self, ik, params, rt="FORMULA"):
+        return {"key": "1", "name": "", "category": "PERFORMANCE", "max_score": 3.0, "rule_type": rt,
+                "input_key": ik, "parameters": params, "children": [], "verification_status": "UNVERIFIED",
+                "rounding": None}
+
+    def test_special_worker(self):
+        n = self.node("developed_workers", {"per_unit": 1.5, "unit": "인", "cap": 3.0,
+                                            "special": {"name": "OF전기원", "per_unit": 3.0}})
+        leaf = lambda inputs: scoring._leaf(n, inputs, {})["score"]
+        self.assertEqual(leaf({"1": 1}), 1.5)
+        self.assertEqual(leaf({"1_special": 1}), 3.0)          # OF전기원 1인 → 3.0점
+        self.assertEqual(leaf({"1": 1, "1_special": 1}), 3.0)  # 한도 3점
+
+    def test_short_tenure(self):
+        n = self.node("engineer_days", {"days": 1095, "cap": 2.0, "short_tenure": {"days": 180, "ratio": 0.8}})
+        self.assertEqual(scoring._leaf(n, {"1": 1095}, {})["score"], 2.0)
+        self.assertAlmostEqual(scoring._leaf(n, {"1": 1095, "1_short": True}, {})["score"], 1.6)
+
+    def test_period_penalty(self):  # '합산기간 3월마다 0.1점씩 감점하되 최대 0.6점 (3월 미만인 경우 3월로 계산)'
+        n = self.node("bonus_count", {"per_unit": 0.1, "sign": -1, "limit": -0.6, "period": 3, "round_up": True})
+        leaf = lambda v: scoring._leaf(n, {"1": v}, {})["score"]
+        self.assertEqual(leaf(0), 0)
+        self.assertEqual(leaf(2), -0.1)   # 3월 미만 → 3월
+        self.assertEqual(leaf(7), -0.2)
+        self.assertEqual(leaf(40), -0.6)  # 한도
+
+    def test_ratio_terms(self):  # 교육훈련 (이수인원 / 평가대상인원) × 점수 합, 최대 0.4
+        n = self.node("bonus_ratio", {"terms": [{"label": "1주", "points": 0.2}, {"label": "2주", "points": 0.4}],
+                                      "numerator": "교육이수인원", "denominator": "평가대상인원수", "limit": 0.4, "sign": 1})
+        self.assertAlmostEqual(scoring._leaf(n, {"1_total": 4, "1_0": 2}, {})["score"], 0.1)
+        self.assertAlmostEqual(scoring._leaf(n, {"1_total": 2, "1_0": 1, "1_1": 2}, {})["score"], 0.4)
+
+    def test_tech_dev(self):  # 개발실적 건당 점수 × 경과기간 비율 ÷ 출원자 수, 최대 0.4
+        n = self.node("tech_dev", {"kinds": [{"name": "특허", "per_unit": 0.2, "age_pct": [1.0, 0.8, 0.6]},
+                                             {"name": "실용신안", "per_unit": 0.1, "age_pct": [1.0, 0.8, None]}],
+                                   "age_bounds": [5, 10, 20], "limit": 0.4, "non_field_ratio": 0.5,
+                                   "split_by_inventors": True})
+        leaf = lambda v: scoring._leaf(n, {"1": v}, {})["score"]
+        self.assertAlmostEqual(leaf([{"kind": 0, "years": 7, "inventors": 2}]), 0.08)   # 0.2 × 80% ÷ 2
+        self.assertEqual(leaf([{"kind": 1, "years": 15}]), 0)                           # 실용신안 10년 초과 '-'
+        self.assertAlmostEqual(leaf([{"kind": 0, "years": 1, "non_field": True}]), 0.1)
+        self.assertEqual(leaf([{"kind": 0, "years": 1}] * 3), 0.4)                       # 한도
+
+    def test_method_table_helpers(self):
+        from backend.db.extract_evaluation_rules import amount_band_rows, grade_point_rows, period_rules
+        text = ("○ 감리업체가 최근 1년간 영업정지를 받은 기간을 합산하여 합산기간 1월마다 0.1점씩 감점하되 최대 0.8점까지 감점. "
+                "(1월 미만인 경우 1월로 계산) / ○ 참여감리원이 기술자격정지를 받은 기간을 합산하여 합산기간 3월마다 0.1점씩 "
+                "감점하되 최대 0.6점까지 감점.")
+        self.assertEqual([(p["subject"], p["period"], p["limit"], p["round_up"]) for p in period_rules(text)],
+                         [("감리업체", 1, 0.8, True), ("참여감리원", 3, 0.6, False)])
+        lic = ("구 분 / 배 점 / 적용대상 자격증 / 기술사 / 0.2점 / 발송배전 / 기사 / 0.14점 / 전기 / 산업기사 / 0.10점 / 전기 / "
+               "OA 산업기사 / 0.05점 / ITQ / ※ 적용대상 자격증이외의 전기관련 자격증은 적용배점의 50% 적용")
+        self.assertEqual([r["score"] for r in grade_point_rows(lic)], [0.2, 0.14, 0.1, 0.05, 0.1, 0.07, 0.05])
+        band = ("부실벌점 / 배 점 / 4천만원미만 / 4천만원이상 / 1억원미만 / 1억원이상 / 고시금액미만 / "
+                "2점 초과 5점 이하 / 0.04 / 0.08 / 0.12 / 25점 초과 / 1 / 2 / 3")
+        self.assertEqual([r["score"] for r in amount_band_rows(band, 50_000_000)], [0.08, 2.0])
+        self.assertIsNone(amount_band_rows(band, None))
+
+    def test_sub_tier_rows(self):
+        from backend.db.extract_evaluation_rules import detail_item_table
+        lines = ["[표]", "심사항목 | 세부항목 | 배점 | 비고",
+                 "나. 약자기업지원 | A. 여성기업으로서 그 존속기간에 따라 / · 3년 이상 / · 3년 미만 | 0.5 / (0.5) / (0.25) | ",
+                 "B. 장애인기업 | 0.2 | ", "[표 끝]"]
+        rows = detail_item_table(lines, 0, 4)[0]["rows"]
+        self.assertEqual([r["score"] for r in rows], [0.5, 0.25, 0.2])
+        self.assertIn("3년 미만", rows[1]["grade"])
+
+
 @unittest.skipUnless(DEFAULT_DB_PATH.exists(), "수집 DB 없음")
 class RuleExtractedTest(unittest.TestCase):
     """기준서 본문 rule_extracted 표시와 LLM 대상 목록 (팀 결정 2026-11-22)
@@ -202,7 +273,7 @@ class RuleExtractedTest(unittest.TestCase):
             shutil.copy(DEFAULT_DB_PATH, path)
             init_db(path).close()
             db = sqlite3.connect(path)
-            for no in ("E012608220", "E012608054", "E012608048"):  # 성공 / 감리 가감점만 문제 / PDF 기준서
+            for no in ("E012608220", "E012608054", "E012608163", "E012608048"):  # 성공 / 감리 성공 / 양성실적만 문제 / PDF
                 refresh_notice(db, no)
             db.commit()
             flag = lambda no: db.execute("""SELECT DISTINCT c.rule_extracted FROM bid_document_content c
@@ -211,23 +282,26 @@ class RuleExtractedTest(unittest.TestCase):
             rows = lambda no, extra="": db.execute(f"SELECT count(*) FROM evaluation_rule WHERE notice_no=? {extra}",
                                                    (no,)).fetchone()[0]
             self.assertEqual(flag("E012608220"), [(1,)])
-            self.assertEqual(flag("E012608054"), [(0,)])
-            self.assertGreater(rows("E012608054"), 0)                              # 멀쩡한 행은 남김
-            self.assertGreater(rows("E012608054", "AND verification_status='REVIEW'"), 0)
+            self.assertEqual(flag("E012608054"), [(1,)])                           # 감리 가감점 5종까지 규칙으로
+            self.assertEqual(flag("E012608163"), [(0,)])
+            self.assertGreater(rows("E012608163"), 0)                              # 멀쩡한 행은 남김
+            self.assertGreater(rows("E012608163", "AND verification_status='REVIEW'"), 0)
             self.assertEqual(flag("E012608048"), [(0,)])
             self.assertEqual(rows("E012608048"), 0)                                # 통째로 비움
-            limit = db.execute("SELECT max_score FROM evaluation_rule WHERE notice_no='E012608054' "
-                               "AND item_name='부실벌점'").fetchone()[0]
-            self.assertEqual(limit, -3.0)  # 표 안 구간별 최대 감점 (1억원 이상 고시금액 미만)
+            penalty = db.execute("SELECT parameters FROM evaluation_rule WHERE notice_no='E012608054' "
+                                 "AND item_name='부실벌점'").fetchone()[0]
+            self.assertEqual([r["score"] for r in __import__("json").loads(penalty)["rows"]][::5], [-0.12, -3.0])
+            # ↑ 추정가격 1.6억 → '1억원 이상 고시금액 미만' 열
             # LLM 이 REVIEW 행을 다 고치면 대상에서 빠진다
             targets = llm_targets(path)
-            self.assertIn("E012608054", targets)
+            self.assertIn("E012608163", targets)
+            self.assertNotIn("E012608054", targets)
             self.assertIn("E012608048", targets)
             self.assertNotIn("E012608220", targets)
-            db.execute("UPDATE evaluation_rule SET updated_by='LLM' WHERE notice_no='E012608054' "
+            db.execute("UPDATE evaluation_rule SET updated_by='LLM' WHERE notice_no='E012608163' "
                        "AND verification_status='REVIEW'")
             db.commit()
-            self.assertNotIn("E012608054", llm_targets(path))
+            self.assertNotIn("E012608163", llm_targets(path))
             db.close()
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
@@ -246,20 +320,20 @@ class RuleExtractedTest(unittest.TestCase):
             shutil.copy(DEFAULT_DB_PATH, path)
             init_db(path).close()
             db = sqlite3.connect(path)
-            refresh_notice(db, "E012608054")
-            db.execute("UPDATE evaluation_rule SET updated_by='LLM' WHERE notice_no='E012608054' "
+            refresh_notice(db, "E012608163")
+            db.execute("UPDATE evaluation_rule SET updated_by='LLM' WHERE notice_no='E012608163' "
                        "AND verification_status='REVIEW'")
             db.commit()
-            self.assertNotIn("E012608054", llm_targets(path))
-            refresh_notice(db, "E012608054")  # 기준서 그대로면 파서가 LLM 공고를 건드리지 않음
-            self.assertGreater(db.execute("SELECT count(*) FROM evaluation_rule WHERE notice_no='E012608054' "
+            self.assertNotIn("E012608163", llm_targets(path))
+            refresh_notice(db, "E012608163")  # 기준서 그대로면 파서가 LLM 공고를 건드리지 않음
+            self.assertGreater(db.execute("SELECT count(*) FROM evaluation_rule WHERE notice_no='E012608163' "
                                           "AND updated_by='LLM'").fetchone()[0], 0)
-            self.assertGreater(invalidate_edited_rules(db, "E012608054"), 0)  # 정정 → LLM 행 삭제
-            refresh_notice(db, "E012608054")
+            self.assertGreater(invalidate_edited_rules(db, "E012608163"), 0)  # 정정 → LLM 행 삭제
+            refresh_notice(db, "E012608163")
             db.commit()
-            self.assertEqual(db.execute("SELECT count(*) FROM evaluation_rule WHERE notice_no='E012608054' "
+            self.assertEqual(db.execute("SELECT count(*) FROM evaluation_rule WHERE notice_no='E012608163' "
                                         "AND updated_by<>'PARSER'").fetchone()[0], 0)
-            self.assertIn("E012608054", llm_targets(path))  # 다시 LLM 대상
+            self.assertIn("E012608163", llm_targets(path))  # 다시 LLM 대상
             db.close()
         finally:
             shutil.rmtree(tmp, ignore_errors=True)

@@ -140,5 +140,7 @@ CREATE TABLE IF NOT EXISTS collect_run (
     window_end       TEXT,
     list_synced      INTEGER,             -- 1 = 조회 범위 전체를 정상 반영 → 다음 daily 의 기준 시점
     updated_count    INTEGER,             -- 기본정보만 바뀐 공고 (상세 재사용)
-    corrected_count  INTEGER              -- 정정·첨부 변경 → 상세 재수집 표시
+    corrected_count  INTEGER,             -- 정정·첨부 변경 → 상세 재수집 표시
+    rule_checked_count   INTEGER,         -- 이번 실행에서 적격심사기준 본문으로 배점 규칙을 돌린 공고
+    rule_extracted_count INTEGER          -- 그중 규칙으로 다 뽑은 공고 (rule_extracted=1). 비율이 떨어지면 새 문장 표현
 );

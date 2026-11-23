@@ -66,6 +66,8 @@ COLUMN_MIGRATIONS = [
     ("collect_run", "list_synced", "INTEGER"),
     ("collect_run", "updated_count", "INTEGER"),
     ("collect_run", "corrected_count", "INTEGER"),
+    ("collect_run", "rule_checked_count", "INTEGER"),
+    ("collect_run", "rule_extracted_count", "INTEGER"),
     # 2026-11-21 범위 정리
     ("bid_document_content", "parser_version", "TEXT"),
     ("company_document_check", "issued_at", "TEXT"),

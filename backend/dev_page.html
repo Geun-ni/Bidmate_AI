@@ -262,9 +262,27 @@ function field(n) {  // 항목 1개 → [입력 HTML, 설명]
   if (ik === 'pq_score') return [number(k, '점 (0~100)'), p['입력'] || ''];
   if (ik === 'performance_amount' || ik === 'same_kind_amount')
     return [number(k, '원'), `기준금액 ${fmt(p.base_amount)}원 (${p.base_amount_source || ''}) · ${n.formula || ''}`];
-  if (ik === 'engineer_days') return [number(k, '일'), n.formula || ''];
+  if (ik === 'engineer_days') {
+    const s = p.short_tenure;
+    return [number(k, '일') + (s ? `<br>${select(k + '_short', [['true', `재직 ${s.days}일 미만`], ['false', `재직 ${s.days}일 이상`]], 'bool')}` : ''),
+            n.formula || ''];
+  }
+  if (ik === 'bonus_count' && p.period)
+    return [number(k, '개월'), `${p.period}${p.period_unit}마다 ${p.per_unit}점, 최대 ${Math.abs(p.limit)}점${p.round_up ? ` (${p.period}${p.period_unit} 미만은 ${p.period}${p.period_unit}로)` : ''}`];
   if (ik === 'bonus_count') return [number(k, '건'), `건당 ${p.per_unit}점, 최대 ${p.limit}점`];
-  if (n.rule_type === 'FORMULA' && 'per_unit' in p) return [number(k, '명'), `1명당 ${p.per_unit}점, 최대 ${p.cap}점`];
+  if (ik === 'bonus_ratio')
+    return [`${p.denominator} ${number(k + '_total', '명')}<br>` +
+            p.terms.map((t, i) => `${esc(t.label)} ${number(`${k}_${i}`, '명')}`).join('<br>'),
+            `(${p.numerator} / ${p.denominator}) × 점수 합, 최대 ${p.limit}점`];
+  if (ik === 'tech_dev')
+    return [`<textarea data-key="${k}" data-kind="json" rows="3" cols="40" placeholder='[{"kind":1,"years":3,"inventors":1}]'></textarea>`,
+            `kind: ${p.kinds.map((x, i) => `${i}=${x.name}(${x.per_unit}점)`).join(', ')} · years: 경과 연수 · inventors: 출원자 수` +
+            (p.non_field_ratio ? ` · non_field: 배전분야 아니면 true (${p.non_field_ratio * 100}%)` : '') + ` · 최대 ${p.limit}점`];
+  if (n.rule_type === 'FORMULA' && 'per_unit' in p) {
+    const s = p.special;
+    return [number(k, s ? `명 (${s.name} 제외)` : '명') + (s ? `<br>${number(k + '_special', `명 (${s.name})`)}` : ''),
+            `1명당 ${p.per_unit}점${s ? `, ${s.name} 1명당 ${s.per_unit}점` : ''}, 최대 ${p.cap}점`];
+  }
   if (ik === 'office_location')
     return [select(k, [...(p.rows || []).map(r => [r.level, `${r.level} (${r.score}점)`]), ['광역 밖', `광역 밖 (${p.outside_region_score || 0}점)`]], 'str'),
             `해당 사업소: ${p.office || ''}`];
@@ -360,7 +378,7 @@ function collectInputs() {
       continue;
     }
     if (el.value === '') continue;
-    inputs[key] = kind === 'num' ? Number(el.value) : kind === 'bool' ? el.value === 'true'
+    inputs[key] = kind === 'num' ? Number(el.value) : kind === 'bool' ? el.value === 'true' : kind === 'json' ? JSON.parse(el.value)
       : kind === 'index' ? (el.value === 'none' ? null : Number(el.value)) : el.value;
   }
   return inputs;
@@ -371,7 +389,7 @@ function fillForm(inputs) {  // 저장한 입력값을 칸에 다시 채운다
     const val = inputs[el.dataset.key];
     if (val === undefined) continue;
     if (el.dataset.kind === 'list') el.checked = (val || []).includes(el.value);
-    else el.value = val === null ? 'none' : String(val);
+    else el.value = val === null ? 'none' : el.dataset.kind === 'json' ? JSON.stringify(val) : String(val);
   }
 }
 

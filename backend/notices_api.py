@@ -114,7 +114,7 @@ def _rule_node(row):
         "rounding": {"digits": row["rounding_digits"], "mode": row["rounding_mode"]}
         if row["rounding_digits"] is not None else None,
         "verification_status": row["verification_status"], "updated_by": row["updated_by"],
-        "source": {"location": row["source_location"], "quote": row["source_quote"]},
+        "source_file": row["filename"],  # 출처 기준서 파일 (근거 문장은 내보내지 않음)
         "children": [],
     }
 
