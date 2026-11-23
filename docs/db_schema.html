@@ -42,6 +42,11 @@ code, pre { font-family: var(--font-mono); font-size: 0.85em; }
 .legend { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 0.82rem; color: var(--muted); }
 .diagram { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 12px; overflow-x: auto; }
 .diagram pre.mermaid { margin: 0; display: flex; justify-content: center; }
+/* 관계도는 크게 그리고 좌우 스크롤 (표가 27개라 화면 폭에 맞추면 글자가 안 보임) */
+.diagram { overflow-x: auto; overscroll-behavior-x: contain; }
+.diagram pre.mermaid, .diagram .mermaid-diagram { display: block; width: max-content; }
+.diagram .mermaid-diagram svg { width: 2400px !important; max-width: none !important; height: auto; margin: 0; }
+.diagram-hint { color: var(--muted); font-size: 0.8rem; }
 .area { display: grid; gap: 14px; }
 .area-head { display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; border-bottom: 2px solid var(--line); padding-bottom: 6px; }
 .area-head code { color: var(--muted); }
@@ -105,6 +110,7 @@ pre.sql { background: var(--head); padding: 10px 12px; border-radius: 4px; overf
     </section>
     <section class="area">
       <div class="area-head"><h2>관계도</h2><code>FK 기준</code></div>
+      <p class="diagram-hint">좌우로 스크롤해서 보세요.</p>
       <div class="diagram"><pre class="mermaid">erDiagram
   restricted_qualification_master ||--o{ restricted_qualification_equivalence : &quot;&quot;
   srm_region_group_master ||--o{ srm_region_district_master : &quot;&quot;
@@ -208,170 +214,6 @@ WHERE n.company_id_src = &#x27;COM01&#x27;
   </main>
 </div>
 
-<!--claude-mermaid-runtime-begin:3477-->
-<style>.mermaid-diagram{margin-block:4px}.mermaid-diagram svg{display:block;margin:0 auto;max-width:100%;height:auto}</style>
-<script src="/_runtime/mermaid-11.16.1.min.js"></script>
-<script>(function(){
-var CFG={"palettes":{"light":{"surface":"#f4efe4","text":"#42392e","line":"#8a7f6d","border":"#7a6c52","bg":"#fffdf8"},"dark":{"surface":"#262b34","text":"#f2f3f5","line":"#a8adb8","border":"#9aa4b8","bg":"#1f232b"}}};
-if(typeof mermaid==='undefined')return;
-var pres=Array.prototype.slice.call(document.querySelectorAll('pre.mermaid')).filter(function(p){if(p.hasAttribute('data-claude-mermaid-claimed'))return false;p.setAttribute('data-claude-mermaid-claimed','1');return true;});
-if(!pres.length)return;
-var mq=window.matchMedia?window.matchMedia('(prefers-color-scheme: dark)'):null;
-var root=document.documentElement;
-var items=pres.map(function(pre){
-var mount=document.createElement('div');mount.className='mermaid-diagram';
-return {pre:pre,mount:mount,src:pre.textContent||''};
-});
-var seq=0;
-var renderGen=0;
-var lastKey='';
-function pageBg(fallback){
-var els=[document.body,document.documentElement];
-for(var i=0;i<els.length;i++){
-var c=els[i]&&getComputedStyle(els[i]).backgroundColor;
-if(c&&c!=='transparent'&&c!=='rgba(0, 0, 0, 0)')return c;
-}
-return fallback;
-}
-function render(){
-var theme=root.getAttribute('data-theme');
-var dark=theme==='dark'||(!!(mq&&mq.matches)&&theme!=='light');
-var pal=dark?CFG.palettes.dark:CFG.palettes.light;
-var bg=pageBg(pal.bg);
-var key=(dark?'d':'l')+'|'+bg;
-if(key===lastKey)return;
-lastKey=key;
-var gen=++renderGen;
-var font=getComputedStyle(document.body).fontFamily||'sans-serif';
-var nat={useMaxWidth:false};
-mermaid.initialize({
-startOnLoad:false,securityLevel:'strict',theme:'base',
-flowchart:nat,sequence:nat,er:nat,state:nat,class:nat,pie:nat,
-gantt:nat,journey:nat,timeline:nat,gitGraph:nat,mindmap:nat,xyChart:nat,
-quadrantChart:nat,sankey:nat,c4:nat,requirement:nat,block:nat,
-packet:nat,kanban:nat,architecture:nat,radar:nat,
-themeVariables:{background:bg,mainBkg:pal.surface,primaryColor:pal.surface,
-primaryTextColor:pal.text,lineColor:pal.line,primaryBorderColor:pal.border,
-nodeBorder:pal.border,clusterBorder:pal.border,edgeLabelBackground:bg,
-clusterBkg:'rgba(127,127,127,0.07)',titleColor:pal.text,
-darkMode:dark,rowOdd:bg,rowEven:'rgba(127,127,127,0.07)',
-attributeBackgroundColorOdd:bg,attributeBackgroundColorEven:'rgba(127,127,127,0.07)',
-fontSize:'16px',fontFamily:font},
-themeCSS:'.node rect, .node circle, .node polygon, .node path, .cluster rect { stroke-width: 2px; }'
-});
-items.forEach(function(it){
-var id='claude-mermaid-'+seq++;
-mermaid.render(id,it.src).then(function(r){
-if(gen!==renderGen)return;
-var prev=it.pre.previousElementSibling;
-if(prev&&prev.className==='mermaid-diagram'&&prev!==it.mount)return;
-it.mount.innerHTML=r.svg;
-if(!it.mount.parentNode)it.pre.parentNode.insertBefore(it.mount,it.pre);
-it.pre.style.display='none';
-},function(){
-var scratch=document.getElementById(id);
-if(scratch)scratch.parentNode.removeChild(scratch);
-scratch=document.getElementById('d'+id);
-if(scratch)scratch.parentNode.removeChild(scratch);
-if(gen!==renderGen)return;
-if(it.mount.parentNode)it.mount.parentNode.removeChild(it.mount);
-it.pre.style.display='';
-});
-});
-}
-render();
-if(mq&&mq.addEventListener)mq.addEventListener('change',render);
-if(typeof MutationObserver!=='undefined')new MutationObserver(render).observe(root,{attributes:true,attributeFilter:['data-theme']});
-})();</script>
-<!--claude-mermaid-runtime-end-->
 
-<!--claude-mermaid-runtime-begin:3847-->
-<style>.mermaid-diagram{margin-block:4px}.mermaid-diagram svg{display:block;margin:0 auto;max-width:100%;height:auto}</style>
-<script src="/_runtime/mermaid-11.16.1.min.js"></script>
-<script>(function(){
-var CFG={"palettes":{"light":{"surface":"#f4efe4","text":"#42392e","line":"#8a7f6d","border":"#7a6c52","bg":"#fffdf8"},"dark":{"surface":"#262b34","text":"#f2f3f5","line":"#a8adb8","border":"#9aa4b8","bg":"#1f232b"}}};
-if(typeof mermaid==='undefined')return;
-var pres=Array.prototype.slice.call(document.querySelectorAll('pre.mermaid')).filter(function(p){if(p.hasAttribute('data-claude-mermaid-claimed'))return false;p.setAttribute('data-claude-mermaid-claimed','1');return true;});
-if(!pres.length)return;
-var mq=window.matchMedia?window.matchMedia('(prefers-color-scheme: dark)'):null;
-var root=document.documentElement;
-function source(el){
-var out='';
-for(var n=el.firstChild;n;n=n.nextSibling){
-if(n.nodeType===3)out+=n.data;
-else if(n.nodeName==='BR')out+='<br>';
-else if(n.nodeType===1)out+=(out.slice(-1)==='<'&&n.textContent[0]==='>'?'<'+n.localName+'>':'')+source(n);
-}
-return out;
-}
-var items=pres.map(function(pre){
-var mount=document.createElement('div');mount.className='mermaid-diagram';
-return {pre:pre,mount:mount,src:source(pre),text:pre.textContent};
-});
-var seq=0;
-var renderGen=0;
-var lastKey='';
-function pageBg(fallback){
-var els=[document.body,document.documentElement];
-for(var i=0;i<els.length;i++){
-var c=els[i]&&getComputedStyle(els[i]).backgroundColor;
-if(c&&c!=='transparent'&&c!=='rgba(0, 0, 0, 0)')return c;
-}
-return fallback;
-}
-function render(){
-var theme=root.getAttribute('data-theme');
-var dark=theme==='dark'||(!!(mq&&mq.matches)&&theme!=='light');
-var pal=dark?CFG.palettes.dark:CFG.palettes.light;
-var bg=pageBg(pal.bg);
-var key=(dark?'d':'l')+'|'+bg;
-if(key===lastKey)return;
-lastKey=key;
-var gen=++renderGen;
-var font=getComputedStyle(document.body).fontFamily||'sans-serif';
-var nat={useMaxWidth:false};
-mermaid.initialize({
-startOnLoad:false,securityLevel:'strict',theme:'base',
-flowchart:nat,sequence:nat,er:nat,state:nat,class:nat,pie:nat,
-gantt:nat,journey:nat,timeline:nat,gitGraph:nat,mindmap:nat,xyChart:nat,
-quadrantChart:nat,sankey:nat,c4:nat,requirement:nat,block:nat,
-packet:nat,kanban:nat,architecture:nat,radar:nat,
-themeVariables:{background:bg,mainBkg:pal.surface,primaryColor:pal.surface,
-primaryTextColor:pal.text,lineColor:pal.line,primaryBorderColor:pal.border,
-nodeBorder:pal.border,clusterBorder:pal.border,edgeLabelBackground:bg,
-clusterBkg:'rgba(127,127,127,0.07)',titleColor:pal.text,
-darkMode:dark,rowOdd:bg,rowEven:'rgba(127,127,127,0.07)',
-attributeBackgroundColorOdd:bg,attributeBackgroundColorEven:'rgba(127,127,127,0.07)',
-fontSize:'16px',fontFamily:font},
-themeCSS:'.node rect, .node circle, .node polygon, .node path, .cluster rect { stroke-width: 2px; }'
-});
-items.forEach(function(it){
-var id='claude-mermaid-'+seq++;
-mermaid.render(id,it.src).catch(function(e){
-if(it.src===it.text)throw e;
-return mermaid.render(id,it.text);
-}).then(function(r){
-if(gen!==renderGen)return;
-var prev=it.pre.previousElementSibling;
-if(prev&&prev.className==='mermaid-diagram'&&prev!==it.mount)return;
-it.mount.innerHTML=r.svg;
-if(!it.mount.parentNode)it.pre.parentNode.insertBefore(it.mount,it.pre);
-it.pre.style.display='none';
-},function(){
-var scratch=document.getElementById(id);
-if(scratch)scratch.parentNode.removeChild(scratch);
-scratch=document.getElementById('d'+id);
-if(scratch)scratch.parentNode.removeChild(scratch);
-if(gen!==renderGen)return;
-if(it.mount.parentNode)it.mount.parentNode.removeChild(it.mount);
-it.pre.style.display='';
-});
-});
-}
-render();
-if(mq&&mq.addEventListener)mq.addEventListener('change',render);
-if(typeof MutationObserver!=='undefined')new MutationObserver(render).observe(root,{attributes:true,attributeFilter:['data-theme']});
-})();</script>
-<!--claude-mermaid-runtime-end-->
 
 </body></html>
