@@ -32,3 +32,6 @@ downloads/
 
 # 예약 수집 로그
 logs/
+
+#서버 인증키
+*.pem

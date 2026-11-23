@@ -1,0 +1,17 @@
+# 백엔드 API 서버 (systemd). 서버 경로: /etc/systemd/system/bidmate-backend.service
+# 코드 /opt/bidmate/app, 가상환경 /opt/bidmate/venv, 실행 계정 bidmate. 서버 안(127.0.0.1:8000)에서만 열린다.
+[Unit]
+Description=BidMate backend API
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=bidmate
+Group=bidmate
+WorkingDirectory=/opt/bidmate/app
+ExecStart=/opt/bidmate/venv/bin/python -m backend.server --port 8000
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
