@@ -1,0 +1,303 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>입찰메이트 색감 미리보기 v2</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
+<style>
+/* ── 모노 기본 (Vercel·Attio·Linear 계열) ── */
+:root{
+  --bg:#FAFAFA;--surface:#FFFFFF;--line:#EAEAEA;--line2:#D4D4D4;
+  --text:#0A0A0A;--text2:#666666;--text3:#8F8F8F;
+  --ink:#0A0A0A;--inkText:#FFFFFF;          /* 검은 알약 */
+  --soft:#F2F2F2;                           /* 비활성 hover */
+  --accent:#FF5A1F;--accentText:#FFFFFF;    /* 후보별로 바뀌는 포인트 하나 */
+  --accentSoft:#FFF0E8;
+  --ok:#0E8A5F;--okBg:#E7F6EF;--warn:#A35F00;--warnBg:#FFF4DE;--bad:#D93025;--badBg:#FDECEA;--muted:#8F8F8F;--mutedBg:#F2F2F2;
+  --ease:cubic-bezier(.16,1,.3,1);
+}
+[data-accent="orange"]{--accent:#FF5A1F;--accentText:#FFFFFF;--accentSoft:#FFF0E8}
+[data-accent="blue"]{--accent:#2F5BFF;--accentText:#FFFFFF;--accentSoft:#EEF2FF}
+[data-accent="lime"]{--accent:#C5F23A;--accentText:#0A0A0A;--accentSoft:#F6FDE3}
+[data-dark]{
+  --bg:#0A0A0A;--surface:#111111;--line:#232323;--line2:#333333;
+  --text:#EDEDED;--text2:#A1A1A1;--text3:#7A7A7A;
+  --ink:#EDEDED;--inkText:#0A0A0A;--soft:#1C1C1C;
+  --ok:#3DD68C;--okBg:#0F2A1F;--warn:#F5B547;--warnBg:#2E2210;--bad:#FF6B5E;--badBg:#2E1513;--muted:#7A7A7A;--mutedBg:#1C1C1C;
+}
+[data-dark][data-accent="orange"]{--accentSoft:#2E1A10}
+[data-dark][data-accent="blue"]{--accent:#5B7FFF;--accentSoft:#141C3A}
+[data-dark][data-accent="lime"]{--accentSoft:#1E2610}
+
+*{box-sizing:border-box}
+html{background:var(--bg)}
+body{margin:0;font-family:"Pretendard Variable",Pretendard,"Malgun Gothic",sans-serif;background:var(--bg);color:var(--text);-webkit-font-smoothing:antialiased;transition:background .3s,color .3s}
+.num{font-variant-numeric:tabular-nums}
+.mono{font-family:ui-monospace,"JetBrains Mono",Consolas,monospace;font-size:.82rem;color:var(--text2)}
+.wrap{width:min(1120px,100% - 32px);margin-inline:auto}
+
+/* ── 미리보기 조작판 ── */
+.ctrl{position:fixed;right:16px;bottom:16px;z-index:50;display:flex;flex-wrap:wrap;gap:6px;align-items:center;max-width:calc(100% - 32px);padding:8px;border-radius:999px;background:var(--surface);border:1px solid var(--line);box-shadow:0 8px 30px rgb(0 0 0/.12)}
+.ctrl span{font-size:.75rem;color:var(--text2);padding:0 4px}
+.dot{width:26px;height:26px;border-radius:50%;border:2px solid var(--surface);outline:1px solid var(--line2);cursor:pointer;padding:0}
+.dot[aria-pressed="true"]{outline:2px solid var(--text)}
+.tg{font:inherit;font-size:.78rem;font-weight:600;height:30px;padding:0 12px;border-radius:999px;border:1px solid var(--line2);background:var(--surface);color:var(--text);cursor:pointer}
+.tg[aria-pressed="true"]{background:var(--ink);color:var(--inkText);border-color:var(--ink)}
+
+/* ── 헤더: 흰 톤 + 검은 원형 메뉴 ── */
+.hd{position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--surface) 88%,transparent);backdrop-filter:saturate(1.6) blur(12px);border-bottom:1px solid transparent;transition:border-color .3s,box-shadow .3s}
+.hd.scrolled{border-bottom-color:var(--line);box-shadow:0 1px 0 rgb(0 0 0/.02)}
+.hd-in{display:flex;align-items:center;gap:16px;height:64px}
+.logo{display:flex;align-items:center;gap:8px;font-weight:800;letter-spacing:-.03em;font-size:1.05rem}
+.logo i{position:relative;width:26px;height:26px;border-radius:8px;background:var(--ink);color:var(--inkText);display:grid;place-items:center;font-style:normal;font-size:.78rem}
+.logo i::after{content:"";width:7px;height:7px;border-radius:50%;background:var(--accent);position:absolute;top:-2px;right:-2px;border:2px solid var(--surface)}
+.nav{display:flex;gap:4px;padding:4px;border-radius:999px;background:var(--soft)}
+.nav a{height:34px;padding:0 16px;display:grid;place-items:center;border-radius:999px;color:var(--text2);text-decoration:none;font-size:.88rem;font-weight:600;transition:background .25s var(--ease),color .25s}
+.nav a:hover{color:var(--text)}
+.nav a.on{background:var(--ink);color:var(--inkText)}
+.hd .sp{flex:1}
+.pill{font:inherit;font-weight:700;font-size:.85rem;height:38px;padding:0 18px;border-radius:999px;border:1px solid var(--line2);background:var(--surface);color:var(--text);cursor:pointer;transition:transform .2s var(--ease),background .2s}
+.pill:hover{transform:translateY(-1px)}
+.pill.ink{background:var(--ink);color:var(--inkText);border-color:var(--ink)}
+
+/* ── 히어로 ── */
+.hero{padding:72px 0 28px}
+.eyebrow{display:inline-flex;align-items:center;gap:8px;font-size:.8rem;font-weight:600;color:var(--text2);padding:6px 12px;border:1px solid var(--line);border-radius:999px;background:var(--surface)}
+.eyebrow b{width:8px;height:8px;border-radius:50%;background:var(--accent)}
+h1{font-size:clamp(2.2rem,6vw,4rem);line-height:1.05;letter-spacing:-.045em;margin:18px 0 12px;font-weight:800}
+h1 em{font-style:normal;color:var(--text3)}
+.lead{color:var(--text2);font-size:1.05rem;max-width:560px;line-height:1.6;margin:0}
+
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--line);border:1px solid var(--line);border-radius:16px;overflow:hidden;margin:32px 0}
+.stat{background:var(--surface);padding:20px}
+.stat b{display:block;font-size:2.2rem;letter-spacing:-.04em;font-weight:800}
+.stat small{color:var(--text2);font-size:.82rem}
+.stat.hot b{color:var(--accent)}
+[data-accent="lime"] .stat.hot b{color:var(--text);background:var(--accent);padding:0 8px;border-radius:8px;display:inline-block}
+
+/* ── 필터: 원형 칩 ── */
+.filters{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:16px}
+.chip{font:inherit;font-size:.84rem;font-weight:600;height:34px;padding:0 14px;border-radius:999px;border:1px solid var(--line2);background:var(--surface);color:var(--text2);cursor:pointer;transition:all .2s var(--ease)}
+.chip.on{background:var(--ink);border-color:var(--ink);color:var(--inkText)}
+.filters .sp{flex:1}
+
+/* ── 공고 카드 ── */
+.list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:20px;display:grid;gap:10px;transition:transform .35s var(--ease),box-shadow .35s var(--ease),border-color .35s}
+.card:hover{transform:translateY(-3px);box-shadow:0 12px 32px rgb(0 0 0/.08);border-color:var(--line2)}
+.row{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.b{font-size:.74rem;font-weight:700;height:24px;padding:0 10px;display:inline-flex;align-items:center;gap:5px;border-radius:999px}
+.b::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor}
+.dd{background:var(--accent);color:var(--accentText)}.dd::before{display:none}
+.dd.calm{background:var(--soft);color:var(--text)}
+.ok{background:var(--okBg);color:var(--ok)}.wa{background:var(--warnBg);color:var(--warn)}.ba{background:var(--badBg);color:var(--bad)}.mu{background:var(--mutedBg);color:var(--muted)}
+.card h3{margin:0;font-size:1.1rem;letter-spacing:-.02em}
+.facts{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:8px;padding-top:12px;border-top:1px solid var(--line)}
+.facts small{display:block;color:var(--text3);font-size:.72rem}
+.facts b{font-size:.9rem}
+.star{margin-left:auto;width:32px;height:32px;border-radius:50%;border:1px solid var(--line);background:var(--surface);color:var(--text3);display:grid;place-items:center;cursor:pointer}
+.star.on{background:var(--ink);color:var(--inkText);border-color:var(--ink)}
+.card.off{opacity:.55}
+
+/* ── 상세 섹션 ── */
+.sec{padding:64px 0}
+.sec h2{font-size:clamp(1.6rem,4vw,2.4rem);letter-spacing:-.04em;margin:0 0 8px}
+.sec p.lead{margin-bottom:24px}
+.grid2{display:grid;grid-template-columns:1.2fr 1fr;gap:12px}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:24px}
+.steps{display:grid;grid-template-columns:repeat(5,1fr);margin:8px 0 4px}
+.steps li{list-style:none;position:relative;display:grid;justify-items:center;gap:8px;font-size:.8rem;color:var(--text3);font-weight:600}
+.steps li::before{content:"";position:absolute;top:13px;left:-50%;right:50%;height:2px;background:var(--line)}
+.steps li::after{content:"";position:absolute;top:13px;left:-50%;width:0;height:2px;background:var(--ink);transition:width .8s var(--ease)}
+.steps li:first-child::before,.steps li:first-child::after{display:none}
+.in .steps li.done::after,.in .steps li.cur::after{width:100%}
+.steps li i{position:relative;z-index:1;width:28px;height:28px;border-radius:50%;border:2px solid var(--line2);background:var(--surface);display:grid;place-items:center;font-style:normal;font-size:.75rem}
+.steps li.done i{background:var(--ink);border-color:var(--ink);color:var(--inkText)}
+.steps li.cur{color:var(--text)}.steps li.cur i{border-color:var(--ink);box-shadow:0 0 0 5px var(--accentSoft)}
+.steps ol{padding:0;margin:0;display:contents}
+.gauge{display:grid;justify-items:center;gap:6px}
+.gauge svg{width:100%;max-width:260px}
+.needle{transform-origin:100px 100px;transform:rotate(-90deg);transition:transform 1.4s var(--ease)}
+.big{font-size:3rem;font-weight:800;letter-spacing:-.05em}
+.prog{height:8px;border-radius:99px;background:var(--soft);overflow:hidden;margin:10px 0 16px}
+.prog i{display:block;height:100%;width:0;border-radius:inherit;background:var(--ink);transition:width 1.2s var(--ease)}
+.in .prog i{width:var(--w)}
+.docs{display:grid;gap:2px;margin:0;padding:0}
+.docs li{list-style:none;display:flex;gap:10px;align-items:center;padding:12px 0;border-bottom:1px solid var(--line);font-weight:600;font-size:.92rem}
+.docs li:last-child{border-bottom:0}
+.ck{width:20px;height:20px;border-radius:50%;border:2px solid var(--line2);display:grid;place-items:center;font-size:.7rem;flex:none}
+.docs li.y .ck{background:var(--ink);border-color:var(--ink);color:var(--inkText)}
+.docs li.y span{color:var(--text3);text-decoration:line-through}
+footer{padding:40px 0 120px;color:var(--text3);font-size:.82rem;border-top:1px solid var(--line)}
+
+/* ── 스크롤 등장: 천천히 떠오르며, 순서대로 지연 ── */
+[data-reveal]{opacity:0;transform:translateY(28px);filter:blur(4px);transition:opacity .9s var(--ease),transform .9s var(--ease),filter .9s var(--ease);transition-delay:calc(var(--i,0) * 90ms)}
+[data-reveal].in{opacity:1;transform:none;filter:none}
+.motion-off [data-reveal]{opacity:1;transform:none;filter:none;transition:none}
+@media (prefers-reduced-motion:reduce){[data-reveal]{opacity:1;transform:none;filter:none;transition:none}}
+
+@media(max-width:760px){
+  .stats{grid-template-columns:repeat(2,1fr)}.list,.grid2{grid-template-columns:minmax(0,1fr)}
+  .nav a{padding:0 10px}.hd .pill{display:none}.facts{grid-template-columns:1fr 1fr}
+  .steps li{font-size:.68rem}
+}
+</style>
+</head>
+<body data-accent="orange">
+
+<header class="hd" id="hd">
+  <div class="wrap hd-in">
+    <div class="logo"><i>입</i>입찰메이트</div>
+    <nav class="nav"><a class="on" href="#list">추천 공고</a><a href="#detail">공고 상세</a><a href="#company">업체정보</a></nav>
+    <span class="sp"></span>
+    <button class="pill">가+</button>
+    <button class="pill ink">업체정보 수정</button>
+  </div>
+</header>
+
+<main class="wrap">
+  <section class="hero">
+    <span class="eyebrow" data-reveal><b></b>한전 SRM 공고 · 2026.11.19 업데이트</span>
+    <h1 data-reveal style="--i:1">참가할 수 있는 공고만<br><em>골라서 보여드립니다.</em></h1>
+    <p class="lead" data-reveal style="--i:2">우리 업체의 면허·자격·지역과 SRM 공고 조건을 비교한 1차 검토 결과입니다. 최종 참가 자격은 공고 원문과 담당자 확인이 우선합니다.</p>
+    <div class="stats" data-reveal style="--i:3">
+      <div class="stat"><b class="num" data-count="4">0</b><small>진행 중 추천</small></div>
+      <div class="stat"><b class="num" data-count="1">0</b><small>확인 필요</small></div>
+      <div class="stat hot"><b class="num" data-count="2">0</b><small>7일 내 마감</small></div>
+      <div class="stat"><b class="num" data-count="1">0</b><small>관심공고</small></div>
+    </div>
+  </section>
+
+  <section id="list">
+    <div class="filters" data-reveal>
+      <button class="chip on">전체</button><button class="chip">참가 가능</button><button class="chip">확인 필요</button><button class="chip">★ 관심공고</button>
+      <span class="sp"></span><button class="chip">마감 임박순 ▾</button>
+    </div>
+    <div class="list" id="cards"></div>
+  </section>
+
+  <section class="sec" id="detail">
+    <h2 data-reveal>춘천지사 관내 배전선로 개량공사</h2>
+    <p class="lead" data-reveal style="--i:1">E012600812 · 한국전력공사 강원본부 춘천지사 · 추정가격 421,687,077원</p>
+    <div class="grid2">
+      <div class="panel" data-reveal style="--i:2">
+        <small style="color:var(--text3);font-weight:600">입찰 진행 단계</small>
+        <ol class="steps"><li class="done"><i>✓</i>참가신청</li><li class="cur"><i>2</i>투찰</li><li><i>3</i>개찰</li><li><i>4</i>적격심사</li><li><i>5</i>계약</li></ol>
+        <div style="margin-top:28px"><small style="color:var(--text3);font-weight:600">필요서류 준비 4 / 6</small>
+          <div class="prog" style="--w:67%"><i></i></div>
+          <ul class="docs"><li class="y"><span class="ck">✓</span><span>입찰참가신청서</span></li><li class="y"><span class="ck">✓</span><span>전기공사업 등록증 사본</span></li><li><span class="ck"></span>시공실적 증명서 (최근 5년)</li></ul>
+        </div>
+      </div>
+      <div class="panel gauge" data-reveal style="--i:3">
+        <small style="color:var(--text3);font-weight:600;justify-self:start">예상 적격심사 점수</small>
+        <svg viewBox="0 0 200 112" aria-hidden="true"><path d="M14 100 A86 86 0 0 1 186 100" fill="none" stroke="var(--soft)" stroke-width="14" stroke-linecap="round"/><line x1="178" y1="68" x2="190" y2="64" stroke="var(--accent)" stroke-width="3"/><line class="needle" id="needle" x1="100" y1="100" x2="100" y2="26" stroke="var(--text)" stroke-width="3" stroke-linecap="round"/><circle cx="100" cy="100" r="6" fill="var(--text)"/></svg>
+        <div class="big num"><span data-count="96.4" data-dec="1">0</span><small style="font-size:1rem;color:var(--text3)"> / 100</small></div>
+        <span class="b ok">기준 95점보다 1.4점 높음</span>
+        <small style="color:var(--text3);text-align:center">참고용 시뮬레이션이며 낙찰을 보장하지 않습니다.</small>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec" id="company" style="padding-top:0">
+    <div class="panel" data-reveal style="display:flex;flex-wrap:wrap;gap:16px;align-items:center;justify-content:space-between">
+      <div><h2 style="font-size:1.5rem;margin:0">가상 전기공사 업체</h2><p class="mono" style="margin:6px 0 0">강원 · 춘천시 (F_011013) · 전기공사업 A06</p></div>
+      <button class="pill ink">정보 수정</button>
+    </div>
+  </section>
+</main>
+
+<footer class="wrap">입찰메이트는 참고용 서비스이며 법적 효력이 없습니다. 최종 확인은 공고 원문과 발주처 기준에 따릅니다.</footer>
+
+<div class="ctrl" aria-label="미리보기 설정">
+  <span>포인트</span>
+  <button class="dot" data-a="orange" style="background:#FF5A1F" aria-pressed="true" title="시그널 오렌지"></button>
+  <button class="dot" data-a="blue" style="background:#2F5BFF" aria-pressed="false" title="일렉트릭 블루"></button>
+  <button class="dot" data-a="lime" style="background:#C5F23A" aria-pressed="false" title="볼트 라임"></button>
+  <button class="tg" id="dark" aria-pressed="false">다크</button>
+  <button class="tg" id="smooth" aria-pressed="true">부드러운 스크롤</button>
+  <button class="tg" id="replay">등장 다시보기</button>
+</div>
+
+<script src="https://unpkg.com/lenis@1.1.13/dist/lenis.min.js"></script>
+<script>
+const NOTICES = [
+  ["D-2", "dd", "ok", "참가 가능(1차)", "춘천지사 관내 배전선로 개량공사", "E012600812", "421,687,077원", "11.26 18:00", "11.27 14:00", true],
+  ["D-2", "dd", "wa", "입찰참가자격 확인 필요", "홍천지사 무정전 공법 배전공사", "E012600845", "286,400,000원", "11.21 18:00", "11.22 14:00", false],
+  ["D-8", "dd calm", "ok", "참가 가능(1차)", "강릉지사 배전선로 보강공사 (정정)", "E012600833", "354,000,000원", "11.27 18:00", "11.28 14:00", false],
+  ["D-12", "dd calm", "ok", "참가 가능(1차)", "원주지사 주상변압기 교체공사", "E012600871", "198,500,000원", "12.01 18:00", "12.02 14:00", false],
+  ["D-14", "dd calm", "ba", "조건 불일치", "영월지사 지중배전 신설공사", "E012600860", "612,300,000원", "12.03 18:00", "12.04 14:00", false],
+  ["종료", "dd calm", "mu", "마감", "당림리 배전선로 무정전 공사", "E012600731", "421,687,077원", "11.11 18:00", "11.12 14:00", false],
+];
+document.getElementById("cards").innerHTML = NOTICES.map((n, i) => `
+  <article class="card${n[3] === "마감" ? " off" : ""}" data-reveal style="--i:${i % 2}">
+    <div class="row"><span class="b ${n[1]}">${n[0]}</span><span class="b ${n[2]}">${n[3]}</span><button class="star${n[9] ? " on" : ""}" aria-label="관심공고">★</button></div>
+    <h3>${n[4]}</h3>
+    <div class="mono">${n[5]} · 강원 전체</div>
+    <div class="facts"><div><small>추정가격</small><b class="num">${n[6]}</b></div><div><small>참가신청 마감</small><b class="num">${n[7]}</b></div><div><small>투찰 마감</small><b class="num">${n[8]}</b></div></div>
+  </article>`).join("");
+
+/* 숫자 카운트업 */
+function countUp(el) {
+  const to = parseFloat(el.dataset.count), dec = +el.dataset.dec || 0, t0 = performance.now(), ms = 1200;
+  (function tick(t) { const p = Math.min(1, (t - t0) / ms), e = 1 - Math.pow(1 - p, 4); el.textContent = (to * e).toFixed(dec); if (p < 1) requestAnimationFrame(tick); })(t0);
+}
+
+/* 스크롤 등장 */
+const io = new IntersectionObserver((entries) => {
+  for (const en of entries) {
+    if (!en.isIntersecting) continue;
+    const el = en.target;
+    el.classList.add("in");
+    el.querySelectorAll("[data-count]").forEach(countUp);
+    if (el.contains(document.getElementById("needle"))) document.getElementById("needle").style.transform = `rotate(${-90 + 180 * 0.964}deg)`;
+    io.unobserve(el);
+  }
+}, { threshold: 0.15, rootMargin: "0px 0px -8% 0px" });
+const observeAll = () => document.querySelectorAll("[data-reveal]").forEach((el) => io.observe(el));
+observeAll();
+
+/* 부드러운(관성) 스크롤 */
+let lenis = null;
+function startLenis() { if (window.Lenis && !lenis) { lenis = new Lenis({ duration: 1.3, easing: (t) => 1 - Math.pow(1 - t, 4), smoothWheel: true }); (function raf(t) { if (!lenis) return; lenis.raf(t); requestAnimationFrame(raf); })(performance.now()); } }
+if (!matchMedia("(prefers-reduced-motion: reduce)").matches) startLenis();
+
+/* 헤더: 스크롤하면 선이 생김 */
+const hd = document.getElementById("hd");
+addEventListener("scroll", () => hd.classList.toggle("scrolled", scrollY > 8), { passive: true });
+
+/* 조작판 */
+document.querySelectorAll("[data-a]").forEach((b) => b.addEventListener("click", () => {
+  document.body.dataset.accent = b.dataset.a;
+  document.querySelectorAll("[data-a]").forEach((x) => x.setAttribute("aria-pressed", x === b));
+}));
+document.getElementById("dark").addEventListener("click", (e) => {
+  const on = !document.body.hasAttribute("data-dark");
+  document.body.toggleAttribute("data-dark", on);
+  e.currentTarget.setAttribute("aria-pressed", on);
+});
+document.getElementById("smooth").addEventListener("click", (e) => {
+  if (lenis) { lenis.destroy(); lenis = null; e.currentTarget.setAttribute("aria-pressed", false); }
+  else { startLenis(); e.currentTarget.setAttribute("aria-pressed", !!lenis); }
+});
+document.getElementById("replay").addEventListener("click", () => {
+  document.querySelectorAll("[data-reveal]").forEach((el) => el.classList.remove("in"));
+  document.getElementById("needle").style.transform = "rotate(-90deg)";
+  document.querySelectorAll("[data-count]").forEach((el) => (el.textContent = "0"));
+  (lenis ? lenis.scrollTo(0, { immediate: true }) : scrollTo(0, 0));
+  requestAnimationFrame(() => requestAnimationFrame(observeAll));
+});
+document.querySelectorAll(".nav a").forEach((a) => a.addEventListener("click", (e) => {
+  e.preventDefault();
+  document.querySelectorAll(".nav a").forEach((x) => x.classList.toggle("on", x === a));
+  const target = document.querySelector(a.getAttribute("href"));
+  lenis ? lenis.scrollTo(target, { offset: -72 }) : target.scrollIntoView({ behavior: "smooth" });
+}));
+document.querySelectorAll(".chip").forEach((c) => c.addEventListener("click", () => {
+  if (c.textContent.includes("▾")) return;
+  document.querySelectorAll(".chip").forEach((x) => !x.textContent.includes("▾") && x.classList.toggle("on", x === c));
+}));
+document.querySelectorAll(".star").forEach((s) => s.addEventListener("click", () => s.classList.toggle("on")));
+</script>
+</body>
+</html>
