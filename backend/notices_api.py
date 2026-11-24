@@ -82,12 +82,16 @@ def get_notice(db, notice_no):
     columns = {r["name"] for r in db.execute("PRAGMA table_info(bid_notice)")}
     extra = [c for c in ("place_name", "notice_date", "progress_state", "estimated_price_basic_amount",
                          "approximate_amount", "a_amount", "overhead_cost_amount", "open_bid_at",
-                         "notice_doc_found", "criteria_doc_found", "last_collected_at") if c in columns]
+                         "notice_doc_found", "criteria_doc_found", "last_collected_at", "srm_revision") if c in columns]
     row = db.execute(f"SELECT {', '.join(LIST_COLUMNS + tuple(extra))} FROM bid_notice WHERE notice_no=? AND {SCOPE}",
                      (notice_no,)).fetchone()
     if row is None:
         return None
     notice = dict(row)
+    # 정정 여부: SRM 정정 차수가 1이면 원공고, 2 이상이면 정정 공고. SRM 상세를 아직 못 받았으면 null
+    revision = notice.pop("srm_revision", None)
+    notice["revision"] = int(revision) if revision and str(revision).isdigit() else None
+    notice["corrected"] = notice["revision"] > 1 if notice["revision"] is not None else None
     notice["detail_status"] = _detail_status(db, notice_no)
     snap = db.execute("SELECT license_auto_eval_method, qualified_auto_eval_method FROM bid_restriction_snapshot "
                       "WHERE notice_no=?", (notice_no,)).fetchone()
@@ -102,6 +106,22 @@ def get_notice(db, notice_no):
         FROM bid_attachment WHERE notice_no=? ORDER BY doc_kind, filename
     """, (notice_no,))]
     return notice
+
+
+FILES_ROOT = Path(__file__).resolve().parents[1]  # 수집기가 local_path 를 이 폴더 기준 상대경로로 저장
+
+
+def attachment_file(db, attachment_id, root=FILES_ROOT):
+    """GET /api/attachments/<id>: 수집기가 받아 둔 원본 → (파일명, 바이트). 없는 id·다운로드 실패·파일 없음 → None"""
+    row = db.execute("SELECT filename, local_path FROM bid_attachment WHERE id=? AND download_status='SUCCESS'",
+                     (attachment_id,)).fetchone()
+    if row is None or not row["local_path"]:
+        return None
+    base = (root / "downloads").resolve()
+    path = (root / row["local_path"].replace("\\", "/")).resolve()  # Windows 에서 수집한 경로도 서버(리눅스)에서 열리게
+    if base not in path.parents or not path.is_file():
+        return None
+    return row["filename"], path.read_bytes()
 
 
 def _rule_node(row):

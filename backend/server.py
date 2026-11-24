@@ -2,11 +2,12 @@ import argparse
 import html
 import os
 import json
+import mimetypes
 from http.cookies import SimpleCookie
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, unquote, urlsplit
+from urllib.parse import parse_qs, quote, unquote, urlsplit
 
 from ai.summary import summarize_notice
 from backend import auth, companies_api, favorites, notices_api, schedule, scoring, uploaded_criteria
@@ -101,6 +102,8 @@ window.close();</script>""")
             self.send_json(200, build_demo())
         elif url.path == "/api/notices" or (url.path.startswith("/api/notices/") and len(url.path.split("/")) <= 5):
             self.handle_notices(url)
+        elif url.path.startswith("/api/attachments/") and len(url.path.split("/")) == 4:
+            self.handle_attachment(url.path.split("/")[3])
         elif url.path.startswith("/api/"):
             self.handle_api("GET", url)
         else:
@@ -247,6 +250,31 @@ window.close();</script>""")
             self.send_json(500, {"error": f"{type(exc).__name__}: {exc}"})
         finally:
             db.close()
+
+    def handle_attachment(self, attachment_id):
+        """GET /api/attachments/<첨부 id> — 수집기가 받아 둔 원본 파일 (공고 상세 attachments[].id)"""
+        if not attachment_id.isdigit():
+            self.send_json(404, {"error": "첨부를 찾을 수 없습니다."})
+            return
+        try:
+            db = notices_api.connect()
+        except notices_api.DatabaseMissing as exc:
+            self.send_json(503, {"error": str(exc)})
+            return
+        try:
+            found = notices_api.attachment_file(db, int(attachment_id))
+        finally:
+            db.close()
+        if found is None:
+            self.send_json(404, {"error": "서버에 저장된 파일이 없습니다."})
+            return
+        filename, data = found
+        self.send_response(200)
+        self.send_header("Content-Type", mimetypes.guess_type(filename)[0] or "application/octet-stream")
+        self.send_header("Content-Disposition", f"attachment; filename*=UTF-8''{quote(filename)}")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
 
     def handle_notices(self, url):
         """GET /api/notices[?include_closed=1] · GET /api/notices/<공고번호>[/evaluation] — 수집기 DB 조회."""
