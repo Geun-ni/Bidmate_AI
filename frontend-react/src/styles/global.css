@@ -134,7 +134,7 @@ a { color: var(--text); text-underline-offset: 3px; }
   .seg button { min-width: 28px; padding: 0 6px; font-size: .78rem; }
 }
 
-.site-footer { border-top: 1px solid var(--border); color: var(--text-3); font-size: .82rem; padding-block: 24px 32px; }
+.site-footer { border-top: 1px solid var(--border); color: var(--text-3); font-size: .82rem; padding-block: 24px 88px; } /* 아래 88px: AI 질문 버튼이 문구를 가리지 않게 */
 
 /* ═════════ 카드·패널 ═════════ */
 .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); }

@@ -19,7 +19,7 @@
 
 .cal-agenda { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); display: grid; gap: 6px; }
 .cal-agenda ul { display: grid; gap: 4px; }
-.agenda-item { display: flex; gap: 8px; align-items: flex-start; padding: 8px; border-radius: 8px; text-decoration: none; color: var(--text); }
+.agenda-item { display: flex; gap: 8px; align-items: flex-start; padding: 6px 8px; border-radius: 8px; text-decoration: none; color: var(--text); }
 .agenda-item:hover { background: var(--surface-2); }
 .agenda-item .cal-dot { margin-top: .5em; }
 .agenda-text { display: grid; min-width: 0; }
@@ -34,3 +34,12 @@
 .cal-dot.tone-brand.unconfirmed { color: var(--text); }
 .cal-dot.tone-accent.unconfirmed { color: var(--accent); }
 .agenda-src { font-size: .72rem; color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* 일정 5개씩 넘기기. 목록 높이를 5칸으로 고정해 페이지를 넘겨도 아래 버튼이 움직이지 않게 */
+.agenda-pager { display: flex; align-items: center; gap: 6px; }
+/* 한 칸 높이(--agenda-row)는 아래 측정값. 마지막 쪽에 일정이 적어도 ‹ › 위치가 그대로 */
+.cal-agenda { --agenda-row: 58px; }
+.cal-agenda .agenda-list:has(+ .agenda-pager) { min-height: calc(5 * var(--agenda-row) + 4 * 4px); align-content: start; }
+.agenda-pager .btn { min-width: 30px; padding: 0 8px; font-size: 1rem; }
+.agenda-pager .btn:disabled { opacity: .35; cursor: default; }
+.agenda-pager > span:last-child { margin-left: auto; }

@@ -9,6 +9,7 @@ import { downloadIcs, googleCalendarUrl } from "../lib/calendar.js";
 import { fullDateTime } from "../lib/format.js";
 import { STEPS, currentStep, nextDeadline } from "../lib/notice.js";
 import { useAppState } from "../state/AppState.jsx";
+import { useQna } from "../components/QnaPanel.jsx";
 import "./NoticeDetail.css";
 
 const TABS = [
@@ -21,6 +22,7 @@ export default function NoticeDetail() {
   const { id } = useParams();
   const [params, setParams] = useSearchParams();
   const { notices, loading, isFavorite, toggleFavorite, withJudgment } = useAppState();
+  const qna = useQna();
   const listed = notices.find((n) => n.id === id);
   // 진행 중 목록에 없는 공고(마감된 공고, 주소로 바로 들어온 공고)는 따로 받는다
   const [single, setSingle] = useState({ id: null, notice: null, error: null });
@@ -141,6 +143,7 @@ export default function NoticeDetail() {
         <div className="dh-actions no-print">
           <DocStatus documents={notice.documents} />
           <span className="spacer" />
+          <button type="button" className="btn btn-sm btn-primary" onClick={() => qna.openQna(notice.id)}>💬 이 공고에 대해 묻기</button>
           {!inactive && (
             <>
               <button type="button" className="btn btn-sm" onClick={() => downloadIcs(notice)}>📅 내 캘린더에 추가 (.ics)</button>

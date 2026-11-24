@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { scrollToTop, useScrollReveal, useSmoothScroll } from "../lib/motion.js";
 import { useAppState } from "../state/AppState.jsx";
+import QnaPanel, { QnaProvider } from "./QnaPanel.jsx";
 
 /** 지금 화면에 실제로 적용된 모드 (자동이면 시스템 설정을 따른다) */
 function useEffectiveTheme(theme) {
@@ -96,7 +97,7 @@ export default function Layout() {
   useScrollReveal([location.pathname, location.search]);
 
   return (
-    <>
+    <QnaProvider>
       <Header />
       <main className="wrap page">
         <Outlet />
@@ -104,6 +105,7 @@ export default function Layout() {
       <footer className="wrap site-footer">
         입찰메이트는 참고용 서비스이며 법적 효력이 없습니다. 추천·예상 점수는 1차 검토 결과이며 낙찰을 보장하지 않습니다. 최종 확인은 공고 원문과 발주처 기준에 따릅니다.
       </footer>
-    </>
+      <QnaPanel />
+    </QnaProvider>
   );
 }

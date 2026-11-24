@@ -83,6 +83,10 @@ export async function fetchNotice(no) {
   return toNotice(detail, detail);
 }
 
+/** 공고 검색 (공고명·공고번호). includeClosed면 마감 공고까지 → { notices: 목록 행, count } */
+export const searchNotices = (q, includeClosed = false) =>
+  get(`/api/notices?q=${enc(q)}${includeClosed ? "&include_closed=1" : ""}`);
+
 export const fetchEvaluation = (no) => get(`/api/notices/${enc(no)}/evaluation`);
 export const fetchNoticeSchedule = (no) => get(`/api/notices/${enc(no)}/schedule`);
 export const calculateScore = (no, inputs, companyId) =>
@@ -155,3 +159,11 @@ export async function downloadAttachment(id, filename) {
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
+
+/* ───────── AI 질문 (Q&A) ─────────
+ * POST /api/qna  { question, notice_no?, company_id?, history? }
+ *   → { answer, sources?: [{ label, notice_no?, field? }] }
+ * 백엔드가 질문을 받아 DB 표 설명과 함께 LLM에 넘기고, 조회한 데이터로 답을 만든다 (백엔드 담당).
+ * 아직 경로가 없으면 404 → 화면에서 '준비 중'으로 안내한다.
+ */
+export const askQna = (body) => request("POST", "/api/qna", body);

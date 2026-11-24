@@ -218,3 +218,20 @@ export function Star({ active, onToggle, title }) {
     </button>
   );
 }
+
+/* ───────── 검색어 강조 ───────── */
+export function Highlight({ text, query }) {
+  const q = (query ?? "").trim();
+  if (!q || !text) return text ?? null;
+  const lower = text.toLowerCase();
+  const key = q.toLowerCase();
+  const out = [];
+  let i = 0;
+  for (let at = lower.indexOf(key); at !== -1; at = lower.indexOf(key, i)) {
+    if (at > i) out.push(text.slice(i, at));
+    out.push(<mark key={at} className="hl">{text.slice(at, at + q.length)}</mark>);
+    i = at + q.length;
+  }
+  out.push(text.slice(i));
+  return out;
+}

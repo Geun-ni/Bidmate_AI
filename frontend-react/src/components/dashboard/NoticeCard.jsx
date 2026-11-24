@@ -2,10 +2,10 @@ import { Link } from "react-router-dom";
 import { shortDateTime } from "../../lib/format.js";
 import { nextDeadline } from "../../lib/notice.js";
 import { useAppState } from "../../state/AppState.jsx";
-import { Dday, JudgmentBadge, Money, NoticeStatusBadge, Star, isInactive } from "../ui.jsx";
+import { Dday, Highlight, JudgmentBadge, Money, NoticeStatusBadge, Star, isInactive } from "../ui.jsx";
 import "./NoticeCard.css";
 
-export default function NoticeCard({ notice }) {
+export default function NoticeCard({ notice, highlight }) {
   const { isFavorite, toggleFavorite } = useAppState();
   const inactive = isInactive(notice);
   const deadline = nextDeadline(notice);
@@ -26,12 +26,12 @@ export default function NoticeCard({ notice }) {
       </div>
 
       <h3 className="nc-title">
-        <Link to={`/notices/${notice.id}`} className="nc-link">{notice.title}</Link>
+        <Link to={`/notices/${notice.id}`} className="nc-link"><Highlight text={notice.title} query={highlight} /></Link>
       </h3>
       <p className="nc-meta small muted">
         <span>{notice.issuer}</span>
         <span aria-hidden="true">·</span>
-        <span className="num">{notice.id}</span>
+        <span className="num"><Highlight text={notice.id} query={highlight} /></span>
         <span aria-hidden="true">·</span>
         <span>{notice.regionLabel}</span>
       </p>
