@@ -207,7 +207,7 @@ def is_done(db, notice_no):
 
 
 def attachment_version(db, notice_no):
-    """첨부 내용 버전: 성공한 첨부의 sha256 을 정렬해 이은 값 (notice_analysis_cache.document_version 과 같은 정의)."""
+    """정정 감지용 첨부 내용 버전: 성공한 첨부의 sha256 을 정렬해 이은 값."""
     shas = [r[0] for r in db.execute("SELECT sha256 FROM bid_attachment WHERE notice_no=? AND sha256 IS NOT NULL "
                                      "ORDER BY sha256", (notice_no,))]
     return ",".join(shas)
@@ -395,7 +395,7 @@ def invalidate_edited_rules(db, notice_no):
     return db.execute("DELETE FROM evaluation_rule WHERE notice_no=? AND updated_by <> 'PARSER'", (notice_no,)).rowcount
 
 
-def process_notice(db, srm, row):
+def process_notice(db, srm, row, after_evaluation=None):
     notice_no = row["no"]
     started = now()
     old_version = attachment_version(db, notice_no)
@@ -434,6 +434,10 @@ def process_notice(db, srm, row):
         except Exception as exc:
             db.rollback()
             print(f"    배점·일정 갱신 실패: {type(exc).__name__}: {exc}"[:300])
+        else:
+            if after_evaluation is not None:
+                result = after_evaluation(db, notice_no)
+                print(f"    분석 결과: {json.dumps(result, ensure_ascii=False)}")
     return found
 
 
@@ -542,8 +546,13 @@ def main():
     ap.add_argument("--srm-revision-check", type=int, default=0, metavar="N",
                     help="완료된 진행 중 공고 N건의 SRM 정정 차수를 다시 확인 (SRM만 바뀐 경우 감지, 기본 0)")
     ap.add_argument("--refresh", action="store_true", help="이미 수집한 공고도 다시 처리")
+    ap.add_argument("--with-llm", action="store_true", help="배점 저장 후 실패 산식·서류를 LLM으로 보완 (유료)")
     ap.add_argument("--dry-run", action="store_true", help="목록 저장 후 상세 수집 대상만 출력 (SRM 요청 없음)")
     args = ap.parse_args()
+    after_evaluation = None
+    if args.with_llm:
+        from ai.notice_extraction import process_notice_extraction
+        after_evaluation = process_notice_extraction
     conf = MODE_DEFAULTS[args.mode]
     interval = args.interval or conf["interval"]
 
@@ -603,7 +612,7 @@ def main():
             try:
                 if srm is None:
                     srm = clients.SrmClient(interval=interval)
-                found = process_notice(db, srm, row)
+                found = process_notice(db, srm, row, after_evaluation)
             except clients.SrmBlocked as exc:
                 db.rollback()
                 blocks += 1

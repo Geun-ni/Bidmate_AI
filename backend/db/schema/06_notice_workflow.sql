@@ -26,6 +26,9 @@ CREATE TABLE IF NOT EXISTS required_document_item (
     validity_note        TEXT,                          -- 예: 입찰공고일 기준 최근 2년간
     source_attachment_id INTEGER REFERENCES bid_attachment(id) ON DELETE SET NULL,
     source_location      TEXT,
+    source_quote         TEXT,
+    source_sha256        TEXT,
+    updated_by           TEXT CHECK (updated_by IN ('PARSER', 'LLM', 'USER')),
     verification_status  TEXT NOT NULL DEFAULT 'UNVERIFIED'
                              CHECK (verification_status IN ('UNVERIFIED', 'VERIFIED', 'REVIEW')),
     UNIQUE (notice_no, stage, position)

@@ -56,13 +56,19 @@ def extract_source(source):
 
 
 def extract_notice(connection, notice):
-    items = []
-    seen = set()
-    for source in connection.execute(
+    sources = connection.execute(
         "SELECT attachment_id,filename,content FROM staging_source "
         "WHERE notice_no=? AND doc_kind='CRITERIA' AND read_status='SUCCESS' ORDER BY attachment_id",
         (notice,),
-    ):
+    )
+    return {"notice_no": notice, "rule_version": "explicit-criteria-v2",
+            "verification_status": "REVIEW", "items": extract_items(sources)}
+
+
+def extract_items(sources):
+    items = []
+    seen = set()
+    for source in sources:
         for name, line_number, quote, context in extract_source(source):
             key = re.sub(r"\s+", "", name)
             if key in seen:
@@ -78,8 +84,7 @@ def extract_notice(connection, notice):
                           "verification_status": "REVIEW"})
     for position, item in enumerate(items, 1):
         item["position"] = position
-    return {"notice_no": notice, "rule_version": "explicit-criteria-v2",
-            "verification_status": "REVIEW", "items": items}
+    return items
 
 
 def main():

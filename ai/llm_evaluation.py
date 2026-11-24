@@ -41,11 +41,23 @@ SCHEMA = {"type": "object", "additionalProperties": False, "required": ["issues"
 
 
 def source_version(sources, rows=()):
-    payload = [(s["attachment_id"], s["sha256"], s["read_status"],
+    payload = [(s["attachment_id"], s["sha256"], s["read_status"], s["rule_extracted"],
                 hashlib.sha256((s["content"] or "").encode()).hexdigest()) for s in sources]
     state = [payload, [{key: row[key] for key in ("id", "position", "verification_status",
              "updated_by", "formula", "source_quote", "updated_at")} for row in rows]]
     return hashlib.sha256(json.dumps(state, ensure_ascii=False).encode()).hexdigest()
+
+
+def needs_evaluation_fallback(db, notice):
+    failed = db.execute("""SELECT 1 FROM bid_attachment a
+        JOIN bid_document_content c ON c.attachment_id=a.id
+        WHERE a.notice_no=? AND a.doc_kind='CRITERIA' AND c.rule_extracted=0 LIMIT 1""",
+        (notice,)).fetchone()
+    if not failed:
+        return False
+    rows = db.execute("SELECT updated_by,verification_status FROM evaluation_rule WHERE notice_no=?",
+                      (notice,)).fetchall()
+    return not rows or any(tuple(row) == ("PARSER", "REVIEW") for row in rows)
 
 
 def load_case(db, notice):
@@ -59,9 +71,10 @@ def load_case(db, notice):
     if not criteria or not any(s["rule_extracted"] == 0 for s in criteria):
         raise ValueError("Notice is not marked for evaluation LLM fallback")
     rows = [dict(r) for r in db.execute("SELECT * FROM evaluation_rule WHERE notice_no=? ORDER BY position", (notice,))]
-    if any(r["updated_by"] != "PARSER" for r in rows):
+    review_rows = [r for r in rows if r["updated_by"] == "PARSER" and r["verification_status"] == "REVIEW"]
+    if not review_rows and any(r["updated_by"] != "PARSER" for r in rows):
         raise ValueError("Existing LLM or user edits require manual review")
-    mode = "REVIEW" if rows and any(r["verification_status"] == "REVIEW" for r in rows) else "FULL"
+    mode = "REVIEW" if review_rows else "FULL"
     if mode == "FULL" and rows:
         raise ValueError("Existing rows have no REVIEW item; inspect parser result")
     usable = [s for s in sources if s["read_status"] == "SUCCESS" and s["content"]]
@@ -85,7 +98,8 @@ def payload_for(notice, mode, sources, rows, model, max_output_tokens):
             content = source["content"]
             spans = []
             for row in rows:
-                if row["verification_status"] != "REVIEW" or row["attachment_id"] != source["attachment_id"]:
+                if (row["updated_by"] != "PARSER" or row["verification_status"] != "REVIEW"
+                        or row["attachment_id"] != source["attachment_id"]):
                     continue
                 quote = row["source_quote"] or ""
                 at = content.find(quote) if quote else -1
@@ -100,7 +114,8 @@ def payload_for(notice, mode, sources, rows, model, max_output_tokens):
               "existing_rows": [{key: r[key] for key in ("id", "position", "parent_id", "category",
                   "item_name", "rule_type", "max_score", "formula", "source_location",
                   "source_quote", "verification_status")} for r in rows],
-              "review_rows": [r["id"] for r in rows if r["verification_status"] == "REVIEW"]}
+              "review_rows": [r["id"] for r in rows
+                              if r["updated_by"] == "PARSER" and r["verification_status"] == "REVIEW"]}
     return {"model": model, "store": False, "max_output_tokens": max_output_tokens,
             "instructions": PROMPT.read_text(encoding="utf-8"),
             "input": [{"role": "user", "content": json.dumps(inputs, ensure_ascii=False)}],
@@ -116,7 +131,8 @@ def validate(result, mode, sources, existing):
     if not isinstance(result["rows"], list):
         raise ValueError("Invalid rows")
     source_map = {s["attachment_id"]: s for s in sources}
-    review_ids = {r["id"] for r in existing if r["verification_status"] == "REVIEW"}
+    review_ids = {r["id"] for r in existing
+                  if r["updated_by"] == "PARSER" and r["verification_status"] == "REVIEW"}
     seen = set()
     for position, row in enumerate(result["rows"], 1):
         if not isinstance(row, dict) or set(row) != set(ROW_FIELDS):
