@@ -1,5 +1,5 @@
-import { useEffect, useId, useLayoutEffect, useReducer, useRef } from "react";
-import { formatMoneyInput, koreanWon } from "../lib/format.js";
+import { useEffect, useId, useLayoutEffect, useReducer, useRef, useState } from "react";
+import { koreanWon } from "../lib/format.js";
 
 const MAX_DIGITS = 13; // 9조 원대까지
 
@@ -12,6 +12,9 @@ function positionAfterDigits(text, n) {
   }
   return text.length;
 }
+
+/** 숫자 문자열에 세 자리마다 콤마 ("00000000" → "00,000,000", 앞자리 0도 그대로 둔다) */
+const groupDigits = (digits) => digits.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
 
 /** 커서가(범위 선택이 아닐 때) 콤마 바로 뒤에 있으면 콤마 앞으로 옮긴다 */
 function snapElement(el) {
@@ -26,13 +29,23 @@ function snapElement(el) {
  *   (중간 숫자를 지우거나 끼워 넣어도 커서가 맨 뒤로 튀지 않는다)
  * - 숫자가 아닌 글자(한글·영문·기호)는 무시하고 커서도 움직이지 않는다.
  * - 콤마 바로 뒤에서 Backspace를 누르면 콤마 앞 숫자를 지운다. Delete도 같은 방식.
+ * - 입력하는 동안은 앞자리 0을 지우지 않는다: 100,000,000에서 맨 앞 1을 지우면 00,000,000이 남고,
+ *   거기에 5를 넣으면 500,000,000이 된다. 칸을 벗어나면(blur) 앞자리 0을 정리한다.
  */
 export default function MoneyInput({ label, value, onChange, hint, required }) {
   const id = useId();
   const ref = useRef(null);
   const caretDigits = useRef(null);
   const [, rerender] = useReducer((x) => x + 1, 0);
-  const display = formatMoneyInput(value);
+  // 편집 중인 숫자 문자열 (앞자리 0 유지). null이면 value를 그대로 보여 준다
+  const [draft, setDraft] = useState(null);
+  const shown = draft ?? (value === null || value === undefined ? "" : String(value));
+  const display = groupDigits(shown);
+
+  // 바깥에서 값이 바뀌면(저장값 불러오기 등) 편집 중 문자열을 버린다
+  useEffect(() => {
+    if (draft !== null && (draft ? Number(draft) : null) !== (value ?? null)) setDraft(null);
+  }, [value, draft]);
 
   // 렌더 후 커서 복원 (값이 그대로여도 다시 실행되도록 의존성 배열을 두지 않는다)
   useLayoutEffect(() => {
@@ -49,18 +62,14 @@ export default function MoneyInput({ label, value, onChange, hint, required }) {
     let before = raw.slice(0, caret).replace(/\D/g, "").length;
     let digits = raw.replace(/\D/g, "");
 
-    // 앞자리 0 제거 (커서 앞에서 지워진 만큼 보정)
-    const trimmed = digits.replace(/^0+(?=\d)/, "");
-    before -= Math.min(before, digits.length - trimmed.length);
-    digits = trimmed;
-
     // 자릿수 초과 입력은 무시
     if (digits.length > MAX_DIGITS) {
       before -= digits.length - MAX_DIGITS;
-      digits = String(value ?? "");
+      digits = shown;
     }
 
     caretDigits.current = Math.max(0, before);
+    setDraft(digits);
     onChange(digits ? Number(digits) : null);
     rerender(); // 숫자가 안 바뀐 입력(한글 등)도 화면 값을 원래대로 되돌리고 커서를 복원한다
   };
@@ -127,6 +136,7 @@ export default function MoneyInput({ label, value, onChange, hint, required }) {
           onMouseUp={snapCaret}
           onTouchEnd={snapCaret}
           onFocus={(e) => requestAnimationFrame(() => snapCaret({ currentTarget: e.target }))}
+          onBlur={() => setDraft(null)}
           aria-describedby={`${id}-ko`}
         />
         <span className="money-unit">원</span>

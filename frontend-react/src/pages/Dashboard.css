@@ -1,6 +1,7 @@
 .dashboard { display: grid; grid-template-columns: minmax(280px, 1fr) minmax(0, 2fr); gap: 20px; align-items: start; }
 .dash-side { display: grid; gap: 16px; position: sticky; top: calc(var(--header-h) + 18px); }
-.dash-main { display: grid; gap: 14px; min-width: 0; }
+/* 목록이 짧아져도 페이지 높이를 유지해, 필터를 바꿀 때 상단 고정 영역이 풀렸다 붙었다 하며 흔들리지 않게 한다 */
+.dash-main { display: grid; gap: 14px; min-width: 0; align-content: start; min-height: 100vh; }
 .dash-head { display: flex; align-items: end; justify-content: space-between; gap: 12px; }
 
 /* 요약 숫자: 한 덩어리 카드를 얇은 선으로 나눈다 */
@@ -12,14 +13,23 @@
 .stat-label { font-size: .8rem; color: var(--text-3); font-weight: 600; }
 
 .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px; border-radius: var(--pill); }
-.toolbar .sort { margin-left: auto; width: 140px; }
+.toolbar .chip-check { padding: 0 12px; white-space: nowrap; flex: none; }
+.toolbar .seg-light { flex: none; }
+.toolbar .sort { margin-left: auto; width: 128px; flex: none; }
 .toolbar .sel-trigger { border-radius: var(--pill); }
 .seg-light { display: inline-flex; gap: 2px; border-radius: var(--pill); padding: 3px; background: var(--soft); }
 .seg-light button { font-weight: 650; border: 0; background: transparent; height: 28px; padding: 0 14px; border-radius: var(--pill); cursor: pointer; font-size: .84rem; color: var(--text-2); transition: background .25s var(--ease), color .2s; }
 .seg-light button[aria-pressed="true"] { background: var(--ink); color: var(--ink-text); }
 
 .notice-list { display: grid; gap: 10px; }
-.mismatch-toggle { display: inline-flex; gap: 6px; align-items: center; cursor: pointer; justify-self: start; }
+
+/* 노트북 폭: 필터와 정렬이 한 줄에 들어가도록 조금 촘촘하게 */
+@media (max-width: 1180px) and (min-width: 561px) {
+  .toolbar { gap: 5px; padding: 6px; }
+  .toolbar .chip-check { padding: 0 8px; gap: 4px; font-size: .78rem; height: 32px; }
+  .toolbar .seg-light button { padding: 0 8px; font-size: .78rem; }
+  .toolbar .sort { width: 118px; }
+}
 
 @media (max-width: 960px) {
   .dashboard { grid-template-columns: minmax(0, 1fr); }
@@ -55,7 +65,6 @@
 .is-stuck .stat-row li { display: flex; align-items: baseline; gap: 6px; padding: 6px 10px; }
 .is-stuck .stat-num { font-size: 1.05rem; }
 .is-stuck .stat-label { font-size: .75rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.is-stuck .toolbar { padding: 6px 10px; }
 
 @media (max-width: 560px) {
   .is-stuck .stat-row { grid-template-columns: repeat(4, minmax(0, 1fr)); }
@@ -67,9 +76,6 @@
 @media (max-width: 560px) {
   .toolbar { gap: 6px; padding: 8px; }
   .toolbar .chip-check { padding: 5px 9px; font-size: .8rem; }
-  .toolbar > .chip-check:nth-of-type(1) { order: 1; }
-  .toolbar > .chip-check:nth-of-type(2) { order: 2; }
-  .toolbar .seg-light { order: 3; }
   .toolbar .seg-light button { padding: 4px 9px; font-size: .8rem; }
-  .toolbar .sort { order: 4; margin-left: auto; width: 108px; flex: none; }
+  .toolbar .sort { margin-left: auto; width: 108px; flex: none; }
 }

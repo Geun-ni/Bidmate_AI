@@ -7,8 +7,10 @@ import Select from "../components/Select.jsx";
 import { Disclaimer, EmptyState, isInactive } from "../components/ui.jsx";
 import { nextDeadline } from "../lib/notice.js";
 import { load, save } from "../lib/storage.js";
+import { fullDateTime } from "../lib/format.js";
 import { useCountUp } from "../lib/motion.js";
 import { useAppState } from "../state/AppState.jsx";
+import TestLoginButton from "../components/TestLoginButton.jsx";
 import "./Dashboard.css";
 
 /** 요약 숫자: 화면에 들어오면 0부터 올라간다 */
@@ -22,10 +24,13 @@ function Stat({ value, label, tone }) {
   );
 }
 
-const DEFAULT_FILTERS = { favoritesOnly: false, judgment: "ALL", hideInactive: false, showMismatch: false, sort: "deadline" };
+const DEFAULT_FILTERS = { favoritesOnly: false, judgment: "ALL", showInactive: false, showMismatch: false, sort: "deadline" };
 
 export default function Dashboard() {
-  const { company, notices, loading, error, reload, favorites } = useAppState();
+  const { user, company, companyLoading, notices: allNotices, lastRun, loading: noticesLoading, error, reload, favorites } = useAppState();
+  // 업체 기준 판정 전에는 목록을 보여 주지 않는다 (판정 없는 목록이 추천처럼 보이지 않게)
+  const loading = noticesLoading || user === undefined || companyLoading;
+  const notices = allNotices;
   const [filters, setFilters] = useState(() => ({ ...DEFAULT_FILTERS, ...load("filters", {}) }));
   const sentinelRef = useRef(null);
   const [stuck, setStuck] = useState(false);
@@ -58,11 +63,11 @@ export default function Dashboard() {
       if (filters.favoritesOnly && !favorites.includes(n.id)) return false;
       // "참가 가능"/"확인 필요" 필터에는 마감·취소된 공고를 넣지 않는다 (참가할 수 없으므로)
       if (filters.judgment !== "ALL" && (n.judgment.overall !== filters.judgment || isInactive(n))) return false;
-      if (filters.hideInactive && isInactive(n)) return false;
+      if (!filters.showInactive && isInactive(n)) return false;
       return true;
     });
     const byDeadline = (a, b) => new Date(nextDeadline(a).iso) - new Date(nextDeadline(b).iso);
-    const byPrice = (a, b) => b.estimatedPrice - a.estimatedPrice;
+    const byPrice = (a, b) => (b.estimatedPrice ?? 0) - (a.estimatedPrice ?? 0);
     // 종료(마감·취소) 공고는 항상 아래로
     return list.sort((a, b) => isInactive(a) - isInactive(b) || (filters.sort === "price" ? byPrice(a, b) : byDeadline(a, b)));
   }, [notices, filters, favorites]);
@@ -78,7 +83,6 @@ export default function Dashboard() {
     };
   }, [notices, favorites]);
 
-  const mismatchCount = notices.filter((n) => n.judgment.overall === "MISMATCH").length;
 
   return (
     <div className="dashboard">
@@ -94,7 +98,10 @@ export default function Dashboard() {
         <div className="dash-head" data-reveal>
           <div>
             <h1 id="list-title" className="page-title">맞춤 입찰 공고</h1>
-            <p className="page-sub">우리 업체의 면허·자격·지역과 SRM 공고 조건을 비교한 결과입니다.</p>
+            <p className="page-sub">
+              우리 업체의 면허·자격·지역과 한전 SRM 공고 조건을 비교한 결과입니다.
+              {lastRun?.finished_at && <span className="muted"> 마지막 수집 {fullDateTime(lastRun.finished_at)}</span>}
+            </p>
           </div>
         </div>
 
@@ -109,10 +116,6 @@ export default function Dashboard() {
 
         {company && !error && (
           <div className="toolbar card" role="group" aria-label="필터와 정렬" data-reveal style={{ "--i": 2 }}>
-            <label className="chip-check">
-              <input type="checkbox" checked={filters.favoritesOnly} onChange={(e) => update({ favoritesOnly: e.target.checked })} />
-              ★ 관심공고만
-            </label>
             <div className="seg-light" role="group" aria-label="판정 상태">
               {[
                 ["ALL", "전체"],
@@ -125,8 +128,16 @@ export default function Dashboard() {
               ))}
             </div>
             <label className="chip-check">
-              <input type="checkbox" checked={filters.hideInactive} onChange={(e) => update({ hideInactive: e.target.checked })} />
-              마감·취소 숨기기
+              <input type="checkbox" checked={filters.favoritesOnly} onChange={(e) => update({ favoritesOnly: e.target.checked })} />
+              ★ 관심공고만
+            </label>
+            <label className="chip-check">
+              <input type="checkbox" checked={filters.showInactive} onChange={(e) => update({ showInactive: e.target.checked })} />
+              마감건 포함
+            </label>
+            <label className="chip-check">
+              <input type="checkbox" checked={filters.showMismatch} onChange={(e) => update({ showMismatch: e.target.checked })} />
+              조건불일치 포함
             </label>
             <div className="sort">
               <Select
@@ -144,19 +155,25 @@ export default function Dashboard() {
         )}
         </div>
 
-        {!company ? (
+        {error ? (
+          <div className="card">
+            <EmptyState title="공고를 불러오지 못했습니다" action={<button type="button" className="btn btn-primary" onClick={reload}>다시 시도</button>}>
+              {error.message} 잠시 후 다시 시도해 주세요. 문제가 계속되면 관리자에게 알려 주세요.
+            </EmptyState>
+          </div>
+        ) : !loading && !user ? (
+          <div className="card">
+            <EmptyState title="로그인하고 업체정보를 등록해 주세요" action={<><Link to="/login" className="btn btn-primary">로그인 / 회원가입</Link><TestLoginButton /></>}>
+              보유 면허·제한경쟁입찰자격·본점 소재지를 등록하면 진행 중인 한전 SRM 공고 {allNotices.length}건 중 참가할 수 있는 공고를 추천해 드립니다.
+            </EmptyState>
+          </div>
+        ) : !loading && !company ? (
           <div className="card">
             <EmptyState
               title="업체정보를 먼저 등록해 주세요"
               action={<Link to="/company" className="btn btn-primary">업체정보 등록하기</Link>}
             >
               보유 면허·제한경쟁입찰자격·본점 소재지를 등록하면 참가할 수 있는 한전 SRM 공고를 추천해 드립니다.
-            </EmptyState>
-          </div>
-        ) : error ? (
-          <div className="card">
-            <EmptyState title="공고를 불러오지 못했습니다" action={<button type="button" className="btn btn-primary" onClick={reload}>다시 시도</button>}>
-              잠시 후 다시 시도해 주세요. 문제가 계속되면 관리자에게 알려 주세요.
             </EmptyState>
           </div>
         ) : loading ? (
@@ -192,12 +209,6 @@ export default function Dashboard() {
           </>
         )}
 
-        {company && !loading && !error && mismatchCount > 0 && (
-          <label className="mismatch-toggle small muted">
-            <input type="checkbox" checked={filters.showMismatch} onChange={(e) => update({ showMismatch: e.target.checked })} />
-            조건 불일치로 제외된 공고 {mismatchCount}건도 보기
-          </label>
-        )}
       </section>
     </div>
   );

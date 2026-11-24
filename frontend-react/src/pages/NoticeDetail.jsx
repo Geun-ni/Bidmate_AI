@@ -1,4 +1,5 @@
-import { useRef } from "react";
+import { useEffect, useRef, useState } from "react";
+import { fetchNotice, fetchNoticeSchedule } from "../api/client.js";
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import SummaryTab from "../components/detail/SummaryTab.jsx";
 import ScoreTab from "../components/detail/ScoreTab.jsx";
@@ -19,7 +20,32 @@ const TABS = [
 export default function NoticeDetail() {
   const { id } = useParams();
   const [params, setParams] = useSearchParams();
-  const { notices, loading, error, isFavorite, toggleFavorite } = useAppState();
+  const { notices, loading, isFavorite, toggleFavorite, withJudgment } = useAppState();
+  const listed = notices.find((n) => n.id === id);
+  // 진행 중 목록에 없는 공고(마감된 공고, 주소로 바로 들어온 공고)는 따로 받는다
+  const [single, setSingle] = useState({ id: null, notice: null, error: null });
+  useEffect(() => {
+    if (loading || listed || single.id === id) return undefined;
+    let alive = true;
+    fetchNotice(id)
+      .then((n) => alive && setSingle({ id, notice: n, error: null }))
+      .catch((e) => alive && setSingle({ id, notice: null, error: e }));
+    return () => {
+      alive = false;
+    };
+  }, [id, loading, listed, single.id]);
+  // 적격심사 서류 제출기한: 날짜가 없고 기준서 원문 문구만 있다
+  const [docDue, setDocDue] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    setDocDue(null);
+    fetchNoticeSchedule(id)
+      .then((r) => alive && setDocDue(r.events.find((e) => e.event_type === "QUALIFICATION_DOC_DUE") ?? null))
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [id]);
   const tabRefs = useRef([]);
   const tab = TABS.some((t) => t.id === params.get("tab")) ? params.get("tab") : "summary";
   const navigate = useNavigate();
@@ -27,13 +53,14 @@ export default function NoticeDetail() {
   // 앱 안에서 들어왔으면 이전 화면(필터·스크롤 유지)으로, 주소로 바로 들어왔으면 목록으로
   const goBack = () => (location.key !== "default" ? navigate(-1) : navigate("/"));
 
-  if (loading) return <div className="card card-pad"><div className="skeleton" style={{ height: 160 }} /></div>;
-  const notice = notices.find((n) => n.id === id);
-  if (error || !notice) {
+  const notice = listed ?? (single.id === id ? withJudgment(single.notice) : null);
+  const pending = !notice && (loading || single.id !== id);
+  if (pending) return <div className="card card-pad"><div className="skeleton" style={{ height: 160 }} /></div>;
+  if (!notice) {
     return (
       <div className="card">
         <EmptyState title="공고를 찾을 수 없습니다" action={<Link to="/" className="btn btn-primary">추천 공고로 돌아가기</Link>}>
-          공고가 삭제되었거나 목록을 불러오지 못했습니다.
+          {single.error?.status === 404 ? "수집 범위(한전 공사·용역 적격심사)에 없는 공고번호입니다." : "공고를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요."}
         </EmptyState>
       </div>
     );
@@ -68,7 +95,8 @@ export default function NoticeDetail() {
           <div className="nc-badges">
             <Dday iso={deadline.iso} inactive={inactive} />
             <NoticeStatusBadge status={notice.status} />
-            <JudgmentBadge status={notice.judgment.overall} ended={inactive} />
+            {notice.notStarted && <span className="badge badge-outline">참가신청 {fullDateTime(notice.schedule.applyStart)} 시작</span>}
+            {notice.judgment.overall && <JudgmentBadge status={notice.judgment.overall} ended={inactive} />}
           </div>
           <Star active={isFavorite(notice.id)} onToggle={() => toggleFavorite(notice.id)} title={notice.title} />
         </div>
@@ -83,14 +111,17 @@ export default function NoticeDetail() {
           <div><dt>참가신청 마감</dt><dd className="num">{fullDateTime(notice.schedule.applyEnd)}</dd></div>
           <div><dt>투찰 마감</dt><dd className="num">{fullDateTime(notice.schedule.bidEnd)}</dd></div>
           <div><dt>개찰</dt><dd className="num">{fullDateTime(notice.schedule.opening)}</dd></div>
-          {notice.schedule.qualifyDue && (
+          {notice.aAmount !== null && (
             <div>
-              <dt>적격심사 서류 기한</dt>
-              <dd className="num">
-                {fullDateTime(notice.schedule.qualifyDue)}
-                {!notice.scheduleMeta?.qualifyDue?.confirmed && (
-                  <span className="badge badge-warn" title={notice.scheduleMeta?.qualifyDue?.source} style={{ marginLeft: 6 }}>미확정·추정</span>
-                )}
+              <dt><Term>A값</Term></dt>
+              <dd>{notice.aAmount === 0 ? <span className="muted" title="SRM에 A값이 0으로 등록됨 (주로 용역 공고)">해당 없음</span> : <Money value={notice.aAmount} />}</dd>
+            </div>
+          )}
+          {docDue && (
+            <div className="span-all">
+              <dt>적격심사 서류 기한 <span className="badge badge-warn" style={{ marginLeft: 4 }}>통보 후 지정</span></dt>
+              <dd className="small">
+                대상자 통보를 받은 뒤 정해집니다. 기준서 원문: &ldquo;{docDue.note}&rdquo;
               </dd>
             </div>
           )}
@@ -155,10 +186,11 @@ function DocStatus({ documents }) {
   return (
     <ul className="doc-status" aria-label="문서 확보 상태">
       {items.map(([key, label]) => {
-        const ok = documents[key]?.status === "OK";
+        const st = documents[key]?.status;
+        const ok = st === "OK";
         return (
-          <li key={key} className={`badge ${ok ? "badge-ok" : "badge-danger"}`} title={documents[key]?.fileName ?? "공식 API 첨부에서 찾지 못함"}>
-            {ok ? "✓" : "✕"} {label} {ok ? "확보" : "미확보"}
+          <li key={key} className={`badge ${ok ? "badge-ok" : st === "PENDING" ? "badge-warn" : "badge-danger"}`} title={documents[key]?.fileName ?? (st === "PENDING" ? "아직 수집하지 않음" : "첨부에서 찾지 못함")}>
+            {ok ? "✓" : st === "PENDING" ? "…" : "✕"} {label} {ok ? "확보" : st === "PENDING" ? "수집 전" : "미확보"}
           </li>
         );
       })}

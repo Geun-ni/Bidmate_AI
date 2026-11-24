@@ -76,7 +76,7 @@ export function Money({ value, showKorean = true }) {
 }
 
 /* ───────── 용어 툴팁 ───────── */
-export function Term({ children, term }) {
+export function Term({ children, term, tabbable = true }) {
   const key = term ?? children;
   const text = GLOSSARY[key];
   const [open, setOpen] = useState(false);
@@ -128,6 +128,7 @@ export function Term({ children, term }) {
         ref={triggerRef}
         type="button"
         className="term"
+        tabIndex={tabbable ? undefined : -1}
         aria-describedby={open ? id : undefined}
         onMouseEnter={() => setOpen(true)}
         onMouseLeave={() => setOpen(false)}

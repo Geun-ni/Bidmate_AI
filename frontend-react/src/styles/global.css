@@ -73,6 +73,9 @@
 }
 :root[data-theme="light"] { color-scheme: light; }
 
+/* 스크롤바가 생기거나 없어져도 화면 폭이 바뀌지 않게 자리를 늘 비워 둔다 */
+html { scrollbar-gutter: stable; }
+
 /* 글자 크기 3단계 */
 :root[data-font="large"] { font-size: 112.5%; }
 :root[data-font="xlarge"] { font-size: 125%; }
@@ -109,6 +112,8 @@ a { color: var(--text); text-underline-offset: 3px; }
 .topbar-nav a:hover { color: var(--text); }
 .topbar-nav a.active { background: var(--ink); color: var(--ink-text); }
 .topbar-tools { margin-left: auto; display: flex; align-items: center; gap: 6px; }
+.user-menu { display: inline-flex; align-items: center; gap: 6px; margin-right: 4px; }
+.user-name { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tool-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 38px; min-width: 80px; padding: 0 14px; border-radius: var(--pill); border: 1px solid var(--border-strong); background: var(--surface); color: var(--text); cursor: pointer; font-size: .85rem; font-weight: 650; transition: transform .2s var(--ease); }
 .tool-btn:hover { transform: translateY(-1px); }
 .seg { display: inline-flex; gap: 2px; padding: 3px; border-radius: var(--pill); background: var(--soft); }
@@ -117,7 +122,7 @@ a { color: var(--text); text-underline-offset: 3px; }
 
 .brand, .topbar-nav a, .tool-btn { white-space: nowrap; }
 @media (max-width: 760px) {
-  .demo-chip, .theme-label { display: none; }
+  .demo-chip, .theme-label, .user-name { display: none; }
   .topbar-inner { gap: 6px; }
   .topbar-nav { margin-left: 0; }
   .topbar-nav a { padding: 0 11px; font-size: .86rem; }
@@ -260,6 +265,9 @@ html.lenis, html.lenis body { height: auto; }
 /* 휴대폰 + 큰 글씨: 헤더 버튼은 화면 폭을 넘지 않도록 px로 고정 (본문 글씨만 커진다) */
 @media (max-width: 560px) {
   .topbar-inner { gap: 6px; }
+  .topbar-tools { gap: 4px; }
+  .user-menu { margin-right: 0; }
+  .user-menu .btn, .topbar-tools > .btn { height: 30px; padding: 0 8px; font-size: 12px; }
   .brand-mark { width: 28px; height: 28px; font-size: 13px; }
   .topbar-nav { padding: 3px; }
   .topbar-nav a { height: 32px; padding: 0 9px; font-size: 13px; }
@@ -267,3 +275,6 @@ html.lenis, html.lenis body { height: auto; }
   .seg button { height: 30px; min-width: 26px; padding: 0 5px; font-size: 12px; }
   .tool-btn { height: 36px; min-width: 36px; padding: 0 9px; font-size: 13px; }
 }
+
+/* 테스트용 자동로그인 (개발 서버에서만) */
+.test-login { display: grid; justify-items: center; gap: 4px; margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--border); text-align: center; }

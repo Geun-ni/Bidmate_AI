@@ -23,3 +23,14 @@
   .license-row { grid-template-columns: 1fr; }
   .license-row > .btn { margin-top: 0; justify-self: start; }
 }
+
+/* 로그인·가입 */
+.auth-form { max-width: 520px; }
+.join-row { display: flex; gap: 8px; align-items: center; }
+.join-row .input { flex: 1; min-width: 0; }
+.join-row .input[readonly] { cursor: pointer; }
+
+/* 업체 구성원 (합류 요청 승인) */
+.member-list { display: grid; gap: 8px; }
+.member-list li { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; }
+.member-list .member-actions { margin-left: auto; display: flex; gap: 6px; }
