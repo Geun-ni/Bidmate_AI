@@ -21,7 +21,8 @@ export default function FavoritesCalendar({ notices }) {
   const days = monthGrid(cursor.y, cursor.m);
   const eventsOn = (d) => events.filter((e) => sameDay(e.date, d));
   const selectedEvents = eventsOn(selected);
-  const upcoming = events.filter((e) => e.date >= today && e.notice.status !== "CANCELLED").slice(0, 3);
+  const upcoming = events.filter((e) => e.date >= today && e.notice.status !== "CANCELLED");
+  const dayKey = `${selected.getFullYear()}-${selected.getMonth()}-${selected.getDate()}`;
 
   const move = (delta) =>
     setCursor(({ y, m }) => {
@@ -81,9 +82,7 @@ export default function FavoritesCalendar({ notices }) {
       <div className="cal-agenda">
         <p className="xsmall muted">{selected.getMonth() + 1}월 {selected.getDate()}일 일정</p>
         {selectedEvents.length ? (
-          <ul>
-            {selectedEvents.map((e) => <AgendaItem key={e.key} event={e} />)}
-          </ul>
+          <AgendaList key={`day-${dayKey}`} events={selectedEvents} label={`${selected.getMonth() + 1}월 ${selected.getDate()}일 일정`} />
         ) : notices.length === 0 ? (
           <p className="small muted">공고 카드의 ☆를 눌러 관심공고로 등록하면 일정이 여기에 표시됩니다.</p>
         ) : (
@@ -92,7 +91,7 @@ export default function FavoritesCalendar({ notices }) {
             {upcoming.length > 0 && (
               <>
                 <p className="xsmall muted" style={{ marginTop: 10 }}>다가오는 일정</p>
-                <ul>{upcoming.map((e) => <AgendaItem key={e.key} event={e} withDate />)}</ul>
+                <AgendaList key={`up-${dayKey}`} events={upcoming} withDate label="다가오는 일정" />
               </>
             )}
           </>
@@ -102,11 +101,34 @@ export default function FavoritesCalendar({ notices }) {
   );
 }
 
+const PAGE_SIZE = 5;
+
+/** 일정 목록: 5개씩 보여 주고 6개부터 ‹ › 로 넘긴다 (옆 칸이 화면에 고정돼 있어 길어지면 아래가 잘리므로) */
+function AgendaList({ events, withDate, label }) {
+  const [page, setPage] = useState(0);
+  const pages = Math.max(1, Math.ceil(events.length / PAGE_SIZE));
+  const current = Math.min(page, pages - 1);
+  const shown = events.slice(current * PAGE_SIZE, current * PAGE_SIZE + PAGE_SIZE);
+  return (
+    <>
+      <ul className="agenda-list">{shown.map((e) => <AgendaItem key={e.key} event={e} withDate={withDate} />)}</ul>
+      {pages > 1 && (
+        <div className="agenda-pager" role="group" aria-label={`${label} 페이지`}>
+          <button type="button" className="btn btn-ghost btn-sm" onClick={() => setPage(current - 1)} disabled={current === 0} aria-label="이전 일정">‹</button>
+          <span className="xsmall muted num" aria-live="polite">{current + 1} / {pages}</span>
+          <button type="button" className="btn btn-ghost btn-sm" onClick={() => setPage(current + 1)} disabled={current === pages - 1} aria-label="다음 일정">›</button>
+          <span className="xsmall muted">총 {events.length}건</span>
+        </div>
+      )}
+    </>
+  );
+}
+
 function AgendaItem({ event, withDate }) {
   const cancelled = event.notice.status === "CANCELLED";
   return (
     <li>
-      <Link to={`/notices/${event.notice.id}`} className="agenda-item">
+      <Link to={`/notices/${event.notice.id}`} className="agenda-item" title={`출처: ${event.source}`}>
         <span className={`cal-dot tone-${event.tone}${event.confirmed ? "" : " unconfirmed"}`} aria-hidden="true" />
         <span className="agenda-text">
           <span className="agenda-label">
@@ -115,7 +137,6 @@ function AgendaItem({ event, withDate }) {
             {cancelled && <span className="badge badge-muted" style={{ marginLeft: 6 }}>취소됨</span>}
           </span>
           <span className="agenda-title">{event.notice.title}</span>
-          <span className="agenda-src">출처: {event.source}</span>
         </span>
       </Link>
     </li>

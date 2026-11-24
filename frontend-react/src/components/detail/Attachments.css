@@ -20,3 +20,8 @@
 @media (max-width: 600px) {
   .att-list li { grid-template-columns: minmax(0, 1fr); gap: 6px; }
 }
+
+/* 파일 이름을 눌러 받기 */
+.att-link { display: block; padding: 0; border: 0; background: none; font: inherit; font-weight: 650; color: var(--brand, var(--text)); text-align: left; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; overflow-wrap: anywhere; }
+.att-link:hover { text-decoration-thickness: 2px; }
+.att-error { display: block; margin-top: 2px; color: var(--danger, #c33); }

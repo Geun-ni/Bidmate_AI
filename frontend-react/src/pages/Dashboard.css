@@ -1,6 +1,13 @@
 .dashboard { display: grid; grid-template-columns: minmax(280px, 1fr) minmax(0, 2fr); gap: 20px; align-items: start; }
+/* 왼쪽 칸은 화면 안에 다 들어갈 때만 고정한다. 길어지면(.too-tall) 고정을 풀어 페이지와 함께 스크롤 → 칸 안에 스크롤바가 생기지 않는다 */
 .dash-side { display: grid; gap: 16px; position: sticky; top: calc(var(--header-h) + 18px); }
-.dash-main { display: grid; gap: 14px; min-width: 0; }
+.dash-side.too-tall { position: static; }
+/* 업체 카드는 칸 높이(오른쪽 제목~검색 영역)만큼 늘리고, 안내 문구는 카드 맨 아래로 */
+.company-slot { display: flex; }
+.company-slot > .card { flex: 1; display: flex; flex-direction: column; }
+.company-slot .company-note { margin-top: auto; padding-top: 10px; }
+/* 목록이 짧아져도 페이지 높이를 유지해, 필터를 바꿀 때 상단 고정 영역이 풀렸다 붙었다 하며 흔들리지 않게 한다 */
+.dash-main { display: grid; gap: 14px; min-width: 0; align-content: start; min-height: 100vh; }
 .dash-head { display: flex; align-items: end; justify-content: space-between; gap: 12px; }
 
 /* 요약 숫자: 한 덩어리 카드를 얇은 선으로 나눈다 */
@@ -12,14 +19,23 @@
 .stat-label { font-size: .8rem; color: var(--text-3); font-weight: 600; }
 
 .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px; border-radius: var(--pill); }
-.toolbar .sort { margin-left: auto; width: 140px; }
+.toolbar .chip-check { padding: 0 12px; white-space: nowrap; flex: none; }
+.toolbar .seg-light { flex: none; }
+.toolbar .sort { margin-left: auto; width: 128px; flex: none; }
 .toolbar .sel-trigger { border-radius: var(--pill); }
 .seg-light { display: inline-flex; gap: 2px; border-radius: var(--pill); padding: 3px; background: var(--soft); }
 .seg-light button { font-weight: 650; border: 0; background: transparent; height: 28px; padding: 0 14px; border-radius: var(--pill); cursor: pointer; font-size: .84rem; color: var(--text-2); transition: background .25s var(--ease), color .2s; }
 .seg-light button[aria-pressed="true"] { background: var(--ink); color: var(--ink-text); }
 
 .notice-list { display: grid; gap: 10px; }
-.mismatch-toggle { display: inline-flex; gap: 6px; align-items: center; cursor: pointer; justify-self: start; }
+
+/* 노트북 폭: 필터와 정렬이 한 줄에 들어가도록 조금 촘촘하게 */
+@media (max-width: 1180px) and (min-width: 561px) {
+  .toolbar { gap: 5px; padding: 6px; }
+  .toolbar .chip-check { padding: 0 8px; gap: 4px; font-size: .78rem; height: 32px; }
+  .toolbar .seg-light button { padding: 0 8px; font-size: .78rem; }
+  .toolbar .sort { width: 118px; }
+}
 
 @media (max-width: 960px) {
   .dashboard { grid-template-columns: minmax(0, 1fr); }
@@ -46,30 +62,61 @@
   transition: box-shadow .15s;
 }
 .dash-sticky.is-stuck { border-bottom: 1px solid var(--border); background: color-mix(in srgb, var(--bg) 92%, transparent); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
-.is-stuck .stat-row li { padding: 8px 12px; }
 
-/* 고정된 동안에는 높이를 줄여 목록이 더 많이 보이게 */
-.is-stuck .page-sub { display: none; }
+/*
+ * 고정된 동안에는 높이를 줄여 목록이 더 많이 보이게.
+ * 줄어들고 다시 커질 때 끊기지 않도록, 배치(display)는 그대로 두고 크기·여백·투명도만 천천히 바꾼다.
+ */
+/* 커질 때(맨 위로 돌아올 때)는 0.75초로 천천히, 작아질 때는 0.45초로 조금 빠르게 */
+.dash-sticky { --shrink: .75s cubic-bezier(.16, 1, .3, 1); transition: gap var(--shrink), padding var(--shrink), box-shadow .15s; }
+.dash-sticky .page-title { transition: font-size var(--shrink); }
+.dash-sticky .page-sub { max-height: 3.2em; overflow: hidden; transition: max-height var(--shrink), opacity var(--shrink), margin var(--shrink); }
+.dash-sticky .stat-row { transition: gap var(--shrink); }
+.dash-sticky .stat-row li { transition: padding var(--shrink); }
+.dash-sticky .stat-num { transition: font-size var(--shrink); }
+.dash-sticky .stat-label { transition: font-size var(--shrink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dash-sticky .toolbar { transition: padding var(--shrink); }
+.dash-search { transition: height var(--shrink); }
+
+.dash-sticky.is-stuck { --shrink: .45s cubic-bezier(.22, .61, .36, 1); gap: 8px; padding-top: 6px; padding-bottom: 8px; }
 .is-stuck .page-title { font-size: 1.15rem; }
-.is-stuck .stat-row { gap: 6px; }
-.is-stuck .stat-row li { display: flex; align-items: baseline; gap: 6px; padding: 6px 10px; }
+.is-stuck .page-sub { max-height: 0; opacity: 0; margin-top: 0; }
+.is-stuck .stat-row li { padding: 5px 12px; }
 .is-stuck .stat-num { font-size: 1.05rem; }
-.is-stuck .stat-label { font-size: .75rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.is-stuck .toolbar { padding: 6px 10px; }
+.is-stuck .stat-label { font-size: .7rem; }
+.is-stuck .dash-search { height: 36px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .dash-sticky, .dash-sticky * { transition: none !important; }
+}
 
 @media (max-width: 560px) {
-  .is-stuck .stat-row { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-  .is-stuck .stat-row li { flex-direction: column; gap: 0; align-items: flex-start; padding: 4px 8px; }
-  .is-stuck .stat-label { font-size: .68rem; max-width: 100%; }
+  .is-stuck .stat-row li { padding: 4px 8px; }
+  .is-stuck .stat-label { font-size: .66rem; }
 }
 
 /* 휴대폰: 필터를 2줄(체크 2개 / 판정+정렬)로 압축해서 고정 영역이 화면을 덜 가리게 */
 @media (max-width: 560px) {
   .toolbar { gap: 6px; padding: 8px; }
   .toolbar .chip-check { padding: 5px 9px; font-size: .8rem; }
-  .toolbar > .chip-check:nth-of-type(1) { order: 1; }
-  .toolbar > .chip-check:nth-of-type(2) { order: 2; }
-  .toolbar .seg-light { order: 3; }
   .toolbar .seg-light button { padding: 4px 9px; font-size: .8rem; }
-  .toolbar .sort { order: 4; margin-left: auto; width: 108px; flex: none; }
+  .toolbar .sort { margin-left: auto; width: 108px; flex: none; }
 }
+
+/* ───────── 검색 ───────── */
+.dash-search { position: relative; display: flex; align-items: center; height: 42px; border: 1px solid var(--border-strong); border-radius: var(--pill); background: var(--surface); padding: 0 6px 0 14px; gap: 8px; }
+.dash-search:focus-within { border-color: var(--text); box-shadow: var(--focus); }
+.dash-search-icon { color: var(--text-3); flex: none; }
+.dash-search input { flex: 1; min-width: 0; height: 100%; border: 0; outline: none; background: transparent; font: inherit; font-size: .92rem; color: var(--text); }
+.dash-search input::-webkit-search-cancel-button { display: none; }
+.dash-search-meta { flex: none; font-size: .78rem; color: var(--text-3); white-space: nowrap; }
+.dash-search-clear { flex: none; border: 0; background: var(--soft); color: var(--text-2); width: 26px; height: 26px; border-radius: 50%; cursor: pointer; font-size: .8rem; }
+mark.hl { background: color-mix(in srgb, var(--accent) 28%, transparent); color: inherit; border-radius: 3px; padding: 0 1px; }
+
+/* 마감된 공고 검색 결과 (가벼운 목록) */
+.closed-results { display: grid; gap: 4px; }
+.closed-results h2 { font-size: .95rem; font-weight: 750; margin-bottom: 4px; }
+.closed-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 4px 14px; align-items: center; padding: 10px 12px; border-radius: 10px; color: inherit; text-decoration: none; }
+.closed-row:hover { background: var(--surface-2); }
+.closed-row .ct { font-weight: 650; font-size: .9rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 560px) { .closed-row { grid-template-columns: minmax(0, 1fr); } }

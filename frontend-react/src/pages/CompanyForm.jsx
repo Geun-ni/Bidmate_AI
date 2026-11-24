@@ -1,81 +1,170 @@
-import { useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import LICENSES from "../data/licenses.json";
-import QUALIFICATIONS from "../data/qualifications.json";
-import REGIONS from "../data/regions.json";
+import * as api from "../api/client.js";
 import { NoticeBox, Term } from "../components/ui.jsx";
 import Select from "../components/Select.jsx";
-import { MOCK_COMPANY } from "../mocks/company.js";
+import { toCompanyPayload } from "../lib/adapt.js";
+import { openPostcode } from "../lib/postcode.js";
 import { useAppState } from "../state/AppState.jsx";
+import TestLoginButton from "../components/TestLoginButton.jsx";
 import "./CompanyForm.css";
 
-const REGION_OPTIONS = REGIONS.map((g) => ({ value: g.areaLimit, label: g.name, hint: `${g.areaLimit} · ${g.districts.length}곳` }));
+const EMPTY = { name: "", bizNo: "", address: "", addressDetail: "", juso: null, licenses: [], qualifications: [] };
 
-const EMPTY = { name: "", bizNo: "", address: "", email: "", areaLimit: "", subAreaCode: "", licenses: [], qualifications: [] };
-
-function validate(form) {
+function validate(form, { isNew }) {
   const errors = {};
   if (!form.name.trim()) errors.name = "업체명을 입력하세요.";
   if (form.bizNo && !/^\d{10}$/.test(form.bizNo.replace(/-/g, ""))) errors.bizNo = "숫자 10자리로 입력하세요. (하이픈은 자동으로 제거됩니다)";
-  if (!form.address.trim()) errors.address = "본점 주소를 입력하세요.";
-  if (form.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) errors.email = "이메일 형식을 확인하세요.";
-  if (!form.areaLimit) errors.areaLimit = "SRM 지역그룹을 선택하세요.";
-  else if (!form.subAreaCode) errors.subAreaCode = "시·군·구를 선택하세요.";
+  if (isNew && !form.juso) errors.address = "주소 검색으로 본점 소재지를 선택하세요.";
   form.licenses.forEach((l) => {
     if (!l.regNo.trim()) errors[`lic-${l.code}-regNo`] = "면허(등록)번호를 입력하세요.";
-    if (!l.regDate) errors[`lic-${l.code}-regDate`] = "실제 등록일자를 입력하세요.";
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(l.regDate)) errors[`lic-${l.code}-regDate`] = "실제 등록일자를 입력하세요.";
   });
   return errors;
 }
 
 export default function CompanyForm() {
-  const { company, saveCompany } = useAppState();
+  const { user, company, companies, joinRequests, companyLoading, refreshCompany, selectCompany, testMode, saveTestCompany } = useAppState();
   const navigate = useNavigate();
-  const [form, setForm] = useState(() => ({ ...EMPTY, ...(company ?? {}) }));
+  const isNew = !company;
+  const [form, setForm] = useState(EMPTY);
+  const [region, setRegion] = useState(null); // 주소 검색 결과 → SRM 지역 매칭 결과
   const [errors, setErrors] = useState({});
+  const [serverError, setServerError] = useState("");
+  const [saving, setSaving] = useState(false);
   const [query, setQuery] = useState("");
+  const [results, setResults] = useState([]);
+  const [qualOptions, setQualOptions] = useState([]);
   const set = (patch) => setForm((f) => ({ ...f, ...patch }));
 
-  const group = REGIONS.find((g) => g.areaLimit === form.areaLimit);
-  const results = useMemo(() => {
+  // 저장된 업체를 칸에 채운다 (업체를 바꾸면 다시)
+  useEffect(() => {
+    setForm(company ? { ...EMPTY, ...company, juso: null, addressDetail: "" } : EMPTY);
+    setRegion(null);
+    setErrors({});
+    setServerError("");
+  }, [company]);
+
+  useEffect(() => {
+    api.fetchQualifications().then((r) => setQualOptions(r.qualifications)).catch(() => setQualOptions([]));
+  }, []);
+
+  // 면허 검색 (입력이 멈추면 서버에 묻는다)
+  useEffect(() => {
     const q = query.trim();
-    if (!q) return [];
-    const held = new Set(form.licenses.map((l) => l.code));
-    const Q = q.toUpperCase();
-    // 정확히 같은 이름·코드 → 이름이 검색어로 시작 → 이름에 포함 순으로 보여준다
-    const rank = (l) => (l.name === q || l.code.toUpperCase() === Q ? 0 : l.name.startsWith(q) ? 1 : 2);
-    return LICENSES.filter((l) => !held.has(l.code) && (l.name.includes(q) || l.code.toUpperCase() === Q))
-      .sort((a, b) => rank(a) - rank(b) || a.name.length - b.name.length)
-      .slice(0, 12);
+    if (!q) {
+      setResults([]);
+      return undefined;
+    }
+    let alive = true;
+    const t = setTimeout(() => {
+      api
+        .searchLicenses(q)
+        .then((r) => alive && setResults(r.licenses.filter((l) => !form.licenses.some((x) => x.code === l.license_code)).slice(0, 12)))
+        .catch(() => alive && setResults([]));
+    }, 250);
+    return () => {
+      alive = false;
+      clearTimeout(t);
+    };
   }, [query, form.licenses]);
 
+  if (user === undefined || (user && companyLoading && !company)) {
+    return <div className="card card-pad"><div className="skeleton" style={{ height: 200 }} /></div>;
+  }
+  if (!user) {
+    return (
+      <div className="card card-pad company-form">
+        <h1 className="page-title">업체정보</h1>
+        <p className="page-sub">업체정보는 로그인한 사용자만 등록·수정할 수 있습니다.</p>
+        <div className="form-actions">
+          <Link to="/login" state={{ from: "/company" }} className="btn btn-primary">로그인 / 회원가입</Link>
+        </div>
+        <TestLoginButton to="/company" />
+      </div>
+    );
+  }
+
+  const searchAddress = async () => {
+    setServerError("");
+    try {
+      const picked = await openPostcode();
+      if (!picked) return;
+      set({ address: picked.address, juso: picked.juso, addressDetail: "" });
+      setErrors((e) => ({ ...e, address: undefined }));
+      const m = await api.matchRegion(picked.juso.siNm, picked.juso.sggNm).catch(() => null);
+      setRegion(m);
+    } catch (e) {
+      setServerError(e.message);
+    }
+  };
+
   const addLicense = (lic) => {
-    set({ licenses: [...form.licenses, { ...lic, regNo: "", regDate: "" }] });
+    set({ licenses: [...form.licenses, { code: lic.license_code, name: lic.license_name, regNo: "", regDate: "" }] });
     setQuery("");
   };
   const updateLicense = (code, patch) => set({ licenses: form.licenses.map((l) => (l.code === code ? { ...l, ...patch } : l)) });
   const toggleQualification = (q) =>
     set({
-      qualifications: form.qualifications.some((x) => x.code === q.code)
-        ? form.qualifications.filter((x) => x.code !== q.code)
-        : [...form.qualifications, q],
+      qualifications: form.qualifications.some((x) => x.code === q.qualification_code)
+        ? form.qualifications.filter((x) => x.code !== q.qualification_code)
+        : [...form.qualifications, { code: q.qualification_code, name: q.qualification_name }],
     });
 
-  const submit = (e) => {
+  const submit = async (e) => {
     e.preventDefault();
-    const found = validate(form);
+    setServerError("");
+    const found = validate(form, { isNew });
     setErrors(found);
     if (Object.keys(found).length) {
       requestAnimationFrame(() => document.querySelector('[aria-invalid="true"]')?.focus());
       return;
     }
-    const district = group.districts.find((d) => d.code === form.subAreaCode);
-    saveCompany({ ...form, bizNo: form.bizNo.replace(/-/g, ""), areaName: group.name, subAreaName: district?.name ?? "" });
-    navigate("/", { state: { saved: true } });
+    setSaving(true);
+    if (testMode) {
+      // 테스트 모드: 서버에 저장하지 않고 이 브라우저에만 남긴다
+      try {
+        let geo = { areaLimit: company?.areaLimit, areaName: company?.areaName, subAreaCode: company?.subAreaCode, subAreaName: company?.subAreaName };
+        if (form.juso) {
+          if (!region?.matched) throw new Error("SRM 지역과 매칭되지 않는 주소입니다. 다른 주소로 다시 검색해 주세요.");
+          const { regions } = await api.fetchRegions();
+          const g = regions.find((x) => x.area_limit === region.area_limit);
+          const d = g?.districts.find((x) => x.region_code === region.sub_area_code);
+          geo = { areaLimit: region.area_limit, areaName: g?.area_limit_name ?? region.area_limit, subAreaCode: region.sub_area_code, subAreaName: d?.region_name ?? "" };
+        }
+        const detail = form.addressDetail?.trim();
+        saveTestCompany({
+          id: "test-company",
+          name: form.name.trim(),
+          bizNo: form.bizNo.replace(/\D/g, ""),
+          address: form.juso ? (detail ? `${form.address} ${detail}` : form.address) : form.address,
+          ...geo,
+          licenses: form.licenses,
+          qualifications: form.qualifications,
+        });
+        navigate("/", { state: { saved: true } });
+      } catch (err) {
+        setServerError(err.message);
+      } finally {
+        setSaving(false);
+      }
+      return;
+    }
+    try {
+      const body = toCompanyPayload(form, { includeAddress: Boolean(form.juso) });
+      const saved = isNew ? await api.createCompany(body) : await api.updateCompany(company.id, body);
+      await refreshCompany(saved.company_id);
+      navigate("/", { state: { saved: true } });
+    } catch (err) {
+      setServerError(err.message);
+    } finally {
+      setSaving(false);
+    }
   };
 
   const err = (key) => (errors[key] ? <p className="field-error" id={`${key}-err`}>{errors[key]}</p> : null);
   const inv = (key) => ({ "aria-invalid": Boolean(errors[key]), "aria-describedby": errors[key] ? `${key}-err` : undefined });
+  const myRole = companies.find((c) => c.company_id === company?.id)?.role;
 
   return (
     <form className="company-form" onSubmit={submit} noValidate>
@@ -84,9 +173,32 @@ export default function CompanyForm() {
         <p className="page-sub">입력한 면허·자격·지역으로 참가할 수 있는 공고를 찾아 드립니다.</p>
       </div>
 
+      {companies.length > 1 && (
+        <div className="field">
+          <label className="field-label" htmlFor="company-pick">수정할 업체</label>
+          <Select
+            id="company-pick"
+            value={company?.id ?? ""}
+            onChange={(v) => selectCompany(v)}
+            options={companies.map((c) => ({ value: c.company_id, label: c.company_name }))}
+          />
+        </div>
+      )}
+
+      {joinRequests.filter((r) => r.membership_status === "PENDING").map((r) => (
+        <NoticeBox key={r.company_id} tone="warn" icon="!">
+          <strong>{r.company_name}</strong> 합류 요청이 승인 대기 중입니다. 업체 소유자가 승인하면 업체정보를 함께 쓸 수 있습니다.
+        </NoticeBox>
+      ))}
+
       <NoticeBox tone="info">
-        입력한 정보는 <strong>업체가 직접 제공한 정보</strong>로, 입찰메이트가 진위를 검증하지 않습니다. 사업자번호가 같아도 다른 계정의 정보와 연결되지 않습니다.
+        입력한 정보는 <strong>업체가 직접 제공한 정보</strong>로, 입찰메이트가 진위를 검증하지 않습니다.
       </NoticeBox>
+      {testMode && (
+        <NoticeBox tone="warn" icon="🧪">
+          <strong>테스트 모드</strong> — 업체정보를 서버가 아니라 이 브라우저에만 저장합니다. 판정·추천은 실제 공고로 계산됩니다.
+        </NoticeBox>
+      )}
 
       <section className="card card-pad form-section" aria-labelledby="sec-basic" data-reveal>
         <h2 id="sec-basic" className="card-title">기본 정보</h2>
@@ -99,51 +211,45 @@ export default function CompanyForm() {
           <label className="field">
             <span className="field-label">사업자등록번호</span>
             <input className="input num" inputMode="numeric" placeholder="숫자 10자리 (선택)" value={form.bizNo} onChange={(e) => set({ bizNo: e.target.value })} {...inv("bizNo")} />
+            <span className="field-hint">동료가 가입할 때 이 번호로 업체를 찾아 합류를 요청합니다.</span>
             {err("bizNo")}
-          </label>
-          <label className="field span-2">
-            <span className="field-label">본점 전체 주소<span className="req">*</span></span>
-            <input className="input" placeholder="등기부등본에 적힌 본점 주소" value={form.address} onChange={(e) => set({ address: e.target.value })} {...inv("address")} />
-            <span className="field-hint">주소와 아래에서 고른 지역이 다르면 지역 판정이 &lsquo;확인 필요&rsquo;로 표시됩니다.</span>
-            {err("address")}
-          </label>
-          <label className="field span-2">
-            <span className="field-label">알림 받을 이메일</span>
-            <input className="input" type="email" placeholder="선택 · 맞춤 공고 알림 기능 준비 중" value={form.email} onChange={(e) => set({ email: e.target.value })} {...inv("email")} />
-            {err("email")}
           </label>
         </div>
       </section>
 
       <section className="card card-pad form-section" aria-labelledby="sec-region" data-reveal>
-        <h2 id="sec-region" className="card-title">본점 소재지 (SRM 지역)</h2>
+        <h2 id="sec-region" className="card-title">본점 소재지</h2>
         <div className="form-grid">
-          <div className="field">
-            <label className="field-label" htmlFor="areaLimit">지역그룹<span className="req">*</span></label>
-            <Select
-              id="areaLimit"
-              value={form.areaLimit}
-              onChange={(v) => set({ areaLimit: v, subAreaCode: "" })}
-              options={REGION_OPTIONS}
-              invalid={Boolean(errors.areaLimit)}
-              describedBy={errors.areaLimit ? "areaLimit-err" : "areaLimit-hint"}
-            />
-            <span id="areaLimit-hint" className="field-hint">전남·광주 소재 업체는 &lsquo;전남광주&rsquo;를 선택하세요.</span>
-            {err("areaLimit")}
+          <div className="field span-2">
+            <span className="field-label">본점 주소<span className="req">*</span></span>
+            <div className="join-row">
+              <input className="input" readOnly value={form.address} placeholder="주소 검색 버튼을 눌러 선택하세요" onClick={searchAddress} {...inv("address")} />
+              <button type="button" className="btn" onClick={searchAddress}>{form.address ? "주소 변경" : "주소 검색"}</button>
+            </div>
+            <span className="field-hint">등기부등본의 본점 주소를 검색해 고르세요. SRM 지역(광역·시군구)은 고른 주소로 자동으로 정해집니다.</span>
+            {err("address")}
           </div>
-          <div className="field">
-            <label className="field-label" htmlFor="subAreaCode">시·군·구<span className="req">*</span></label>
-            <Select
-              id="subAreaCode"
-              value={form.subAreaCode}
-              onChange={(v) => set({ subAreaCode: v })}
-              options={group ? group.districts.map((d) => ({ value: d.code, label: d.name })) : []}
-              placeholder={group ? "선택하세요" : "지역그룹을 먼저 고르세요"}
-              disabled={!group}
-              invalid={Boolean(errors.subAreaCode)}
-              describedBy={errors.subAreaCode ? "subAreaCode-err" : undefined}
-            />
-            {err("subAreaCode")}
+          {form.juso && (
+            <label className="field span-2">
+              <span className="field-label">상세 주소</span>
+              <input className="input" placeholder="동·호수 등 (선택)" value={form.addressDetail} onChange={(e) => set({ addressDetail: e.target.value })} />
+            </label>
+          )}
+          <div className="field span-2">
+            <span className="field-label">SRM 지역</span>
+            {form.juso ? (
+              region?.matched ? (
+                <p className="small"><span className="badge badge-ok">매칭됨</span> {form.juso.siNm} {form.juso.sggNm} → <span className="num">{region.area_limit}_{region.sub_area_code}</span></p>
+              ) : region ? (
+                <p className="small"><span className="badge badge-danger">매칭 실패</span> SRM 지역 기준정보에 없는 시군구입니다. 다른 주소로 다시 검색하거나 관리자에게 알려 주세요.</p>
+              ) : (
+                <p className="small muted">확인 중…</p>
+              )
+            ) : company ? (
+              <p className="small">{company.areaName} · {company.subAreaName} <span className="muted xsmall num">({company.areaLimit}_{company.subAreaCode})</span></p>
+            ) : (
+              <p className="small muted">주소를 고르면 표시됩니다.</p>
+            )}
           </div>
         </div>
       </section>
@@ -157,10 +263,10 @@ export default function CompanyForm() {
             <ul className="search-results" data-lenis-prevent role="listbox" aria-label="면허 검색 결과">
               {results.length ? (
                 results.map((l) => (
-                  <li key={l.code}>
+                  <li key={l.license_code}>
                     <button type="button" className="search-item" onClick={() => addLicense(l)}>
-                      <span>{l.name}</span>
-                      <span className="muted xsmall num">{l.code}</span>
+                      <span>{l.license_name}</span>
+                      <span className="muted xsmall num">{l.license_code}</span>
                     </button>
                   </li>
                 ))
@@ -204,25 +310,65 @@ export default function CompanyForm() {
         <h2 id="sec-qual" className="card-title"><Term>제한경쟁입찰자격</Term></h2>
         <p className="small muted">보유한 자격을 모두 선택하세요. 등록번호와 일자는 받지 않습니다.</p>
         <div className="qual-grid">
-          {QUALIFICATIONS.map((q) => (
-            <label key={q.code} className="chip-check">
-              <input type="checkbox" checked={form.qualifications.some((x) => x.code === q.code)} onChange={() => toggleQualification(q)} />
-              {q.name}
+          {qualOptions.map((q) => (
+            <label key={q.qualification_code} className="chip-check">
+              <input type="checkbox" checked={form.qualifications.some((x) => x.code === q.qualification_code)} onChange={() => toggleQualification(q)} />
+              {q.qualification_name}
             </label>
           ))}
         </div>
         <p className="xsmall muted">주력분야는 입력받지 않습니다. 주력분야 제한이 있는 공고는 &lsquo;확인 필요&rsquo;로 표시됩니다.</p>
       </section>
 
+      {company && (myRole === "OWNER" || user.is_admin) && <Members companyId={company.id} />}
+
+      {serverError && <NoticeBox tone="danger" icon="!">{serverError}</NoticeBox>}
+
       <div className="form-actions">
-        {import.meta.env.DEV && (
-          <button type="button" className="btn btn-ghost" onClick={() => setForm({ ...EMPTY, ...MOCK_COMPANY })}>가상 업체로 채우기</button>
-        )}
         <span className="spacer" />
         <Link to="/" className="btn">취소</Link>
-        <button type="submit" className="btn btn-primary">저장하고 추천 공고 보기</button>
+        <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? "저장 중…" : "저장하고 추천 공고 보기"}</button>
       </div>
-      <p className="xsmall muted">초안 안내: 추천·판정 결과는 목업 데이터라 업체정보를 바꿔도 아직 달라지지 않습니다. 저장한 정보는 이 브라우저에만 남습니다.</p>
     </form>
+  );
+}
+
+/** 업체 소유자·관리자: 합류 요청 승인·거절 */
+function Members({ companyId }) {
+  const [members, setMembers] = useState(null);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    api.fetchMembers(companyId).then((r) => setMembers(r.members)).catch((e) => setError(e.message));
+  }, [companyId]);
+  const decide = async (userId, status) => {
+    setError("");
+    try {
+      const r = await api.setMemberStatus(companyId, userId, status);
+      setMembers(r.members);
+    } catch (e) {
+      setError(e.message);
+    }
+  };
+  if (!members || members.length <= 1) return error ? <NoticeBox tone="danger" icon="!">{error}</NoticeBox> : null;
+  const LABEL = { ACTIVE: "소속", PENDING: "승인 대기", REJECTED: "거절됨" };
+  return (
+    <section className="card card-pad form-section" aria-labelledby="sec-members">
+      <h2 id="sec-members" className="card-title">업체 구성원</h2>
+      <ul className="member-list">
+        {members.map((m) => (
+          <li key={m.user_id}>
+            <span>{m.email}</span>
+            <span className="badge badge-outline">{m.role === "OWNER" ? "소유자" : LABEL[m.membership_status]}</span>
+            {m.role !== "OWNER" && m.membership_status === "PENDING" && (
+              <span className="member-actions">
+                <button type="button" className="btn btn-sm btn-primary" onClick={() => decide(m.user_id, "ACTIVE")}>승인</button>
+                <button type="button" className="btn btn-sm" onClick={() => decide(m.user_id, "REJECTED")}>거절</button>
+              </span>
+            )}
+          </li>
+        ))}
+      </ul>
+      {error && <NoticeBox tone="danger" icon="!">{error}</NoticeBox>}
+    </section>
   );
 }

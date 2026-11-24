@@ -48,7 +48,9 @@ export default function DocsTab({ notice }) {
         {notice.status === "CANCELLED" ? (
           <EmptyState title="취소된 공고입니다">취소된 공고는 서류를 준비할 필요가 없습니다. 재공고가 올라오면 새 공고에서 확인하세요.</EmptyState>
         ) : (
-          <EmptyState title="필요서류를 찾지 못했습니다">공고문과 적격심사기준 원문에서 제출서류를 확인해 주세요.</EmptyState>
+          <EmptyState title="필요서류 목록은 준비 중입니다">
+            공고문·적격심사기준에서 제출서류를 뽑아내는 분석(AI)이 아직 연결되지 않았습니다. 지금은 원본 문서에서 제출서류 항목을 직접 확인해 주세요.
+          </EmptyState>
         )}
       </section>
     );
