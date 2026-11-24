@@ -408,3 +408,30 @@ class CorrectionFlagTest(unittest.TestCase):
             db.close()
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
+
+
+class AttachmentFileTest(unittest.TestCase):
+    """원본 다운로드: 받아 둔 파일만 돌려주고, 실패·없는 파일·downloads 밖 경로는 None"""
+
+    def test_attachment_file(self):
+        import shutil, sqlite3, tempfile
+        from pathlib import Path
+        tmp = Path(tempfile.mkdtemp())
+        try:
+            (tmp / "downloads" / "E1").mkdir(parents=True)
+            (tmp / "downloads" / "E1" / "기준서.hwp").write_bytes(b"HWP")
+            (tmp / "secret.txt").write_bytes(b"no")
+            db = sqlite3.connect(":memory:")
+            db.row_factory = sqlite3.Row
+            db.execute("CREATE TABLE bid_attachment (id INTEGER PRIMARY KEY, filename TEXT, local_path TEXT, "
+                       "download_status TEXT)")
+            db.executemany("INSERT INTO bid_attachment VALUES (?,?,?,?)", [
+                (1, "기준서.hwp", "downloads\E1\기준서.hwp", "SUCCESS"),   # Windows 에서 수집한 경로
+                (2, "실패.hwp", None, "FAILED"),
+                (3, "없음.hwp", "downloads/E1/없음.hwp", "SUCCESS"),
+                (4, "secret.txt", "downloads/../secret.txt", "SUCCESS")])
+            self.assertEqual(notices_api.attachment_file(db, 1, root=tmp), ("기준서.hwp", b"HWP"))
+            for i in (2, 3, 4, 99):
+                self.assertIsNone(notices_api.attachment_file(db, i, root=tmp))
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)

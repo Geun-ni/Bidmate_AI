@@ -108,6 +108,22 @@ def get_notice(db, notice_no):
     return notice
 
 
+FILES_ROOT = Path(__file__).resolve().parents[1]  # 수집기가 local_path 를 이 폴더 기준 상대경로로 저장
+
+
+def attachment_file(db, attachment_id, root=FILES_ROOT):
+    """GET /api/attachments/<id>: 수집기가 받아 둔 원본 → (파일명, 바이트). 없는 id·다운로드 실패·파일 없음 → None"""
+    row = db.execute("SELECT filename, local_path FROM bid_attachment WHERE id=? AND download_status='SUCCESS'",
+                     (attachment_id,)).fetchone()
+    if row is None or not row["local_path"]:
+        return None
+    base = (root / "downloads").resolve()
+    path = (root / row["local_path"].replace("\\", "/")).resolve()  # Windows 에서 수집한 경로도 서버(리눅스)에서 열리게
+    if base not in path.parents or not path.is_file():
+        return None
+    return row["filename"], path.read_bytes()
+
+
 def _rule_node(row):
     params = row["parameters"]
     return {
