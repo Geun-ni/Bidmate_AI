@@ -21,7 +21,7 @@ python -m backend.server
 | API | 내용 |
 | --- | --- |
 | `GET /api/notices` | 진행 중 한전 공사·용역 적격심사 공고 목록 (`?include_closed=1`이면 마감 포함) + 마지막 수집 실행 결과. 값이 없으면 `null` |
-| `GET /api/notices/<공고번호>` | 기본정보 + 면허·적격자격 조건(조회 전·실패는 `status: "확인 필요"`) + SRM 상세(A금액·경비·개찰일시) |
+| `GET /api/notices/<공고번호>` | 기본정보 + 면허·적격자격 조건(조회 전·실패는 `status: "확인 필요"`) + SRM 상세(A금액·경비·개찰일시) + 정정 여부(`revision`: SRM 정정 차수, `corrected`: 2차 이상이면 `true`, SRM 상세 전이면 둘 다 `null`) |
 | `POST /api/notices/<공고번호>/score` | 예상 점수 계산(저장 안 함). 본문 `{"inputs": {"bid_price", "planned_price", "management_method": "ratio"\|"credit", "<규칙 key>": 값}}` → 항목별 점수·미산정·산정 보류, 합계, 통과점수 비교. 입력 안 한 항목은 0점이 아니라 미산정 ([backend/scoring.py](backend/scoring.py) 맨 위 설명) |
 | `GET /api/notices/<공고번호>/schedule` | 공고 일정(신청·투찰·개찰 + 적격심사서류 제출기한 원문 문구. 제출기한은 통보 후 정해져 날짜 없음) |
 | `GET /api/schedule?from=YYYY-MM-DD&to=YYYY-MM-DD` | 달력용 기간 일정. `&favorites=1`이면 내 관심공고 일정만(로그인, 날짜 없는 제출기한 포함) |

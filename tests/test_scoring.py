@@ -381,3 +381,30 @@ class UploadedCriteriaTest(unittest.TestCase):
             db.close()
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
+
+
+@unittest.skipUnless(DEFAULT_DB_PATH.exists(), "수집 DB 없음")
+class CorrectionFlagTest(unittest.TestCase):
+    """공고 상세의 정정 여부: SRM 정정 차수 1 = 원공고, 2 이상 = 정정, 모르면 null"""
+
+    def test_revision(self):
+        import shutil, sqlite3, tempfile
+        from pathlib import Path
+        tmp = tempfile.mkdtemp()
+        try:
+            path = Path(tmp) / "t.sqlite3"
+            shutil.copy(DEFAULT_DB_PATH, path)
+            db = sqlite3.connect(path)
+            db.row_factory = sqlite3.Row
+            no = "E012606808"
+            n = notices_api.get_notice(db, no)
+            self.assertEqual((n["revision"], n["corrected"]), (1, False))
+            db.execute("UPDATE bid_notice SET srm_revision='2' WHERE notice_no=?", (no,))
+            n = notices_api.get_notice(db, no)
+            self.assertEqual((n["revision"], n["corrected"]), (2, True))
+            db.execute("UPDATE bid_notice SET srm_revision=NULL WHERE notice_no=?", (no,))
+            n = notices_api.get_notice(db, no)
+            self.assertEqual((n["revision"], n["corrected"]), (None, None))
+            db.close()
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
