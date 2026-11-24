@@ -38,7 +38,7 @@ export default function CompanyCard({ company }) {
           </dd>
         </div>
       </dl>
-      <p className="xsmall muted" style={{ marginTop: 10 }}>업체가 직접 입력한 정보이며 별도로 검증되지 않았습니다.</p>
+      <p className="xsmall muted company-note">업체가 직접 입력한 정보이며 별도로 검증되지 않았습니다.</p>
     </section>
   );
 }

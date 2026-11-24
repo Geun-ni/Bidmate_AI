@@ -122,7 +122,7 @@ export default function Select({ id, value, onChange, options, placeholder = "ì„
         onClick={() => (open ? close() : openList())}
         onKeyDown={onKeyDown}
       >
-        <span className={`sel-value${selected ? "" : " sel-placeholder"}`}>{selected ? selected.label : placeholder}</span>
+        <span className={`sel-value${selected ? "" : " sel-placeholder"}`}>{selected ? selected.short ?? selected.label : placeholder}</span>
         <span className="sel-caret" aria-hidden="true">â–¾</span>
       </button>
       {open && (

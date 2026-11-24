@@ -103,3 +103,64 @@
 .score-summary .total.tentative { display: flex; align-items: center; gap: 8px; min-height: 3.1rem; }
 .score-summary .total.tentative strong { font-size: 2rem; color: var(--text-2); letter-spacing: -.02em; }
 .max-short { color: var(--danger); font-weight: 650; }
+
+/* 배점 규칙으로 만든 입력 칸: 한 줄에 [항목·점수 | 입력] */
+.rule-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr); gap: 6px 16px; align-items: start; padding: 9px 0; border-top: 1px solid var(--border); }
+.rule-row:first-child { border-top: 0; }
+.rule-label { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 8px; min-height: 34px; }
+.rule-name { font-size: .88rem; font-weight: 650; line-height: 1.35; }
+.rule-field { display: grid; gap: 4px; min-width: 0; }
+.rule-field .unit-wrap { max-width: 240px; }
+.rule-field .input { height: 34px; }
+.rule-field .yn { justify-self: start; flex-wrap: wrap; }
+.rule-hint summary { cursor: pointer; color: var(--text-3); width: max-content; list-style: none; }
+.rule-hint summary::-webkit-details-marker { display: none; }
+.rule-hint summary::before { content: "ⓘ "; }
+.rule-hint[open] summary { color: var(--text-2); }
+.rule-hint p { margin-top: 4px; line-height: 1.5; overflow-wrap: anywhere; }
+.rule-note { color: var(--warn-text, var(--text-2)); }
+.sel-wrap .sel-label { white-space: normal; }
+
+/* 접고 펴는 소분류 */
+.rule-group { margin-top: 8px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-2); }
+.rule-group-head { display: grid; grid-template-columns: 14px minmax(0, 1fr) 64px auto; align-items: center; gap: 8px; width: 100%; padding: 10px 12px; border: 0; background: transparent; cursor: pointer; text-align: left; color: var(--text); font: inherit; }
+.rule-group-head:focus-visible { outline: none; box-shadow: var(--focus); border-radius: 10px; }
+.rule-caret { color: var(--text-3); font-size: .8rem; }
+.rule-group-name { font-weight: 700; font-size: .92rem; }
+.rule-progress { color: var(--text-3); text-align: right; font-variant-numeric: tabular-nums; }
+.rule-progress.full { color: var(--ok, var(--text-2)); font-weight: 650; }
+.rule-group-body { padding: 0 12px 6px; border-top: 1px solid var(--border); }
+.rule-group .rule-group { background: var(--surface); }
+
+@media (max-width: 640px) {
+  .rule-row { grid-template-columns: minmax(0, 1fr); }
+  .rule-label { min-height: 0; }
+  .rule-group-head { grid-template-columns: 14px minmax(0, 1fr) auto; }
+  .rule-group-head .rule-progress { display: none; }
+}
+.field-stack { display: grid; gap: 6px; }
+.inline-field { display: grid; gap: 2px; }
+.check-list { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.techdev { display: grid; gap: 8px; }
+.techdev-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.techdev-row .unit-wrap { width: 150px; }
+.techdev-actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.save-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.upload-box { display: grid; gap: 10px; margin-top: 8px; padding-top: 14px; border-top: 1px solid var(--border); }
+.upload-box .join-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+
+/* 범위를 넘는 값을 넣었을 때 칸 위에 잠깐 뜨는 안내 */
+.num-field { position: relative; }
+.clamp-tip { position: absolute; left: 0; bottom: calc(100% + 6px); z-index: 6; padding: 4px 9px; border-radius: 8px; background: var(--ink); color: var(--ink-text); font-size: .74rem; font-weight: 600; white-space: nowrap; box-shadow: 0 6px 16px rgb(0 0 0 / .16); pointer-events: none; animation: clamp-tip-in .18s var(--ease, ease-out); }
+.clamp-tip::after { content: ""; position: absolute; left: 14px; top: 100%; border: 5px solid transparent; border-top-color: var(--ink); }
+@keyframes clamp-tip-in { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .clamp-tip { animation: none; } }
+
+/* 점수 칸: 폭을 고정해 '미산정' 배지 ↔ 숫자로 바뀌어도 옆 글자가 움직이지 않게 */
+.score-slot { display: inline-flex; justify-content: flex-end; align-items: center; min-width: 104px; flex: none; font-variant-numeric: tabular-nums; }
+.score-val.partial strong { color: var(--text-2); }
+.none-rest { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 10px 0 4px; }
+
+@media (max-width: 640px) {
+  .score-slot { min-width: 84px; }
+}

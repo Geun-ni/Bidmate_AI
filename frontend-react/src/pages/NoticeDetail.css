@@ -13,6 +13,8 @@
 .dh-facts dt { font-size: .76rem; color: var(--text-3); }
 .dh-facts dd { font-size: .9rem; font-weight: 650; }
 .dh-facts dd .muted { display: block; font-weight: 500; }
+.dh-facts .span-all { grid-column: 1 / -1; }
+.dh-facts .span-all dd { font-weight: 500; line-height: 1.55; }
 
 .stepper { display: grid; grid-template-columns: repeat(5, 1fr); counter-reset: step; }
 .stepper li { position: relative; display: grid; justify-items: center; gap: 4px; text-align: center; font-size: .8rem; color: var(--text-3); }

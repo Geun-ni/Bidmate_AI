@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { scrollToTop, useScrollReveal, useSmoothScroll } from "../lib/motion.js";
 import { useAppState } from "../state/AppState.jsx";
-import DevPanel from "./DevPanel.jsx";
+import QnaPanel, { QnaProvider } from "./QnaPanel.jsx";
 
 /** 지금 화면에 실제로 적용된 모드 (자동이면 시스템 설정을 따른다) */
 function useEffectiveTheme(theme) {
@@ -23,7 +23,7 @@ const FONTS = [
 ];
 
 function Header() {
-  const { theme, setTheme, fontSize, setFontSize } = useAppState();
+  const { theme, setTheme, fontSize, setFontSize, user, signOut } = useAppState();
   const effective = useEffectiveTheme(theme);
   const isDark = effective === "dark";
   const toggleLabel = isDark ? "라이트 모드로 전환" : "다크 모드로 전환";
@@ -43,12 +43,23 @@ function Header() {
           <span className="brand-mark" aria-hidden="true">입</span>
           입찰메이트
         </NavLink>
-        <span className="demo-chip">가상 데이터 초안</span>
         <nav className="topbar-nav" aria-label="주 메뉴">
           <NavLink to="/" end>추천 공고</NavLink>
           <NavLink to="/company">업체정보</NavLink>
         </nav>
         <div className="topbar-tools">
+          {user === undefined ? null : user ? (
+            <span className="user-menu">
+              <span className="small muted user-name" title={user.email}>
+                {user.display_name || user.email}
+                {user.is_admin && <span className="badge badge-brand" style={{ marginLeft: 6 }}>관리자</span>}
+                {user.test && <span className="badge badge-warn" style={{ marginLeft: 6 }}>테스트 모드</span>}
+              </span>
+              <button type="button" className="btn btn-sm btn-ghost" onClick={signOut}>로그아웃</button>
+            </span>
+          ) : (
+            <NavLink to="/login" className="btn btn-sm">로그인</NavLink>
+          )}
           <div className="seg" role="group" aria-label="글자 크기">
             {FONTS.map((f) => (
               <button key={f.value} type="button" title={f.title} aria-label={f.title} aria-pressed={fontSize === f.value} onClick={() => setFontSize(f.value)}>
@@ -86,7 +97,7 @@ export default function Layout() {
   useScrollReveal([location.pathname, location.search]);
 
   return (
-    <>
+    <QnaProvider>
       <Header />
       <main className="wrap page">
         <Outlet />
@@ -94,7 +105,7 @@ export default function Layout() {
       <footer className="wrap site-footer">
         입찰메이트는 참고용 서비스이며 법적 효력이 없습니다. 추천·예상 점수는 1차 검토 결과이며 낙찰을 보장하지 않습니다. 최종 확인은 공고 원문과 발주처 기준에 따릅니다.
       </footer>
-      {import.meta.env.DEV && <DevPanel />}
-    </>
+      <QnaPanel />
+    </QnaProvider>
   );
 }
