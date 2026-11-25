@@ -167,3 +167,6 @@ export async function downloadAttachment(id, filename) {
  * 아직 경로가 없으면 404 → 화면에서 '준비 중'으로 안내한다.
  */
 export const askQna = (body) => request("POST", "/api/qna", body);
+
+/* ───────── 베타 의견 ───────── */
+export const sendFeedback = (body) => request("POST", "/api/feedback", body);

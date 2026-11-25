@@ -13,6 +13,7 @@ import { fullDateTime, shortDateTime } from "../lib/format.js";
 import { useCountUp } from "../lib/motion.js";
 import { useAppState } from "../state/AppState.jsx";
 import TestLoginButton from "../components/TestLoginButton.jsx";
+import { surveyDone } from "../lib/feedback.js";
 import "./Dashboard.css";
 
 /** 요약 숫자: 화면에 들어오면 0부터 올라간다 */
@@ -276,6 +277,8 @@ export default function Dashboard() {
 
 
   return (
+    <>
+    <SurveyBanner />
     <div className="dashboard">
       <aside ref={sideRef} className={`dash-side${sideTooTall ? " too-tall" : ""}`}>
         <div data-reveal className="company-slot" style={companyHeight ? { minHeight: companyHeight } : undefined}><CompanyCard company={company} /></div>
@@ -489,6 +492,7 @@ export default function Dashboard() {
 
       </section>
     </div>
+    </>
   );
 }
 
@@ -581,6 +585,23 @@ function FilterPanel({ filters, update, onClose }) {
         </button>
         <button type="button" className="btn btn-primary btn-sm" onClick={onClose}>닫기</button>
       </div>
+    </div>
+  );
+}
+
+/**
+ * 베타 설문 안내 띠 (추천 공고 화면 맨 위). 닫기 버튼 없이 늘 보인다.
+ * 설문을 제출한 브라우저에서만 보이지 않는다.
+ */
+function SurveyBanner() {
+  if (surveyDone()) return null;
+  return (
+    <div className="survey-banner" role="region" aria-label="베타 설문 안내">
+      <span className="survey-banner-icon" aria-hidden="true">🧪</span>
+      <p>
+        <strong>베타테스트 중입니다.</strong> 써 보신 소감을 알려 주시면 정식 서비스에 반영할게요.
+      </p>
+      <Link to="/feedback" className="btn btn-sm btn-primary">설문 참여 (약 3분)</Link>
     </div>
   );
 }

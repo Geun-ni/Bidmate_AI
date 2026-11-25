@@ -7,6 +7,7 @@ import Dashboard from "./pages/Dashboard.jsx";
 import CompanyForm from "./pages/CompanyForm.jsx";
 import NoticeDetail from "./pages/NoticeDetail.jsx";
 import Login from "./pages/Login.jsx";
+import Survey from "./pages/Survey.jsx";
 import NotFound from "./pages/NotFound.jsx";
 import "./styles/global.css";
 
@@ -19,6 +20,7 @@ createRoot(document.getElementById("root")).render(
             <Route index element={<Dashboard />} />
             <Route path="company" element={<CompanyForm />} />
             <Route path="login" element={<Login />} />
+            <Route path="feedback" element={<Survey />} />
             <Route path="notices/:id" element={<NoticeDetail />} />
             <Route path="*" element={<NotFound />} />
           </Route>

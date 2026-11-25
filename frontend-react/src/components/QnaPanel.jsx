@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { Link, useLocation } from "react-router-dom";
 import { askQna, fetchEvaluation, fetchNotice, fetchNoticeSchedule } from "../api/client.js";
 import { answer as localAnswer } from "../lib/qna.js";
+import { FeedbackReaction } from "./Feedback.jsx";
 import { load, save } from "../lib/storage.js";
 import { useAppState } from "../state/AppState.jsx";
 import "./QnaPanel.css";
@@ -99,7 +100,7 @@ export default function QnaPanel() {
       .filter((m) => m.kind === "answer" || m.kind === "local" || m.role === "user")
       .slice(-HISTORY_LIMIT)
       .map((m) => ({ role: m.role, text: m.text }));
-    setMessages((ms) => [...ms, { id, role: "user", text: q, notice: pinned }, { id: id + 1, role: "assistant", kind: "pending", text: "" }]);
+    setMessages((ms) => [...ms, { id, role: "user", text: q, notice: pinned }, { id: id + 1, role: "assistant", kind: "pending", text: "", question: q }]);
     setText("");
     setBusy(true);
     let reply = null;
@@ -233,9 +234,18 @@ export default function QnaPanel() {
                             </p>
                           )}
                           {(m.kind === "answer" || m.kind === "local") && (
-                            <p className="xsmall qna-warn">
-                              {m.kind === "local" ? "데이터 기반 자동 답변 · " : ""}참고용 답변 · 공고 원문 확인 필요
-                            </p>
+                            <>
+                              <p className="xsmall qna-warn">
+                                {m.kind === "local" ? "데이터 기반 자동 답변 · " : ""}참고용 답변 · 공고 원문 확인 필요
+                              </p>
+                              <FeedbackReaction
+                                compact
+                                target="qna"
+                                refId={String(m.id)}
+                                question="이 답변이 도움이 됐나요?"
+                                extra={{ question: m.question, answer: m.text.slice(0, 1000), source: m.kind === "local" ? "rule" : "llm", notice_no: m.notice ?? pinned ?? null }}
+                              />
+                            </>
                           )}
                           {m.kind === "error" && m.retry && (
                             <button type="button" className="btn btn-sm" onClick={() => send(m.retry)}>다시 시도</button>

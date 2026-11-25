@@ -133,7 +133,7 @@ a { color: var(--text); text-underline-offset: 3px; }
   .topbar-nav a { padding: 0 11px; font-size: .86rem; }
   .tool-btn { min-width: 38px; padding: 0 10px; }
 }
-@media (max-width: 480px) {
+@media (max-width: 520px) {
   .brand { font-size: 0; gap: 0; }
   .seg button { min-width: 28px; padding: 0 6px; font-size: .78rem; }
 }
@@ -282,3 +282,8 @@ html.lenis, html.lenis body { height: auto; }
 
 /* 테스트용 자동로그인 (개발 서버에서만) */
 .test-login { display: grid; justify-items: center; gap: 4px; margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--border); text-align: center; }
+
+/* 휴대폰(520px 이하): 헤더 자리가 모자라 글자 크기 버튼은 숨긴다 (휴대폰 브라우저의 확대 기능으로 대신) */
+@media (max-width: 520px) {
+  .topbar-tools .seg { display: none; }
+}
