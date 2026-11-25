@@ -865,9 +865,10 @@ def experience_section(lines, limit, price, gosi, special, table_start=0):
     return None
 
 
-def experience_items(lines, start, end, limit):
-    """시공경험 절 → [{name, cap, formula, params, quote, bonus}]"""
-    items, heading = [], None
+def experience_items(lines, start, end, limit, price=None):
+    """시공경험 절 → [{name, cap, formula, params, quote, bonus}]
+    산식 위 '○ 10억원이상 50억원 미만공사 평점' 같은 구간 줄이 있으면 추정가격에 맞는 구간의 산식만 쓴다 (정보통신)"""
+    items, heading, band_ok = [], None, True
     sec = lines[start:end]
     text = "\n".join(sec)
     amounts = {re.sub(r"\s+", "", m.group(1)): int(m.group(2).replace(",", "")) for m in AMOUNT_TEXT.finditer(text)}
@@ -878,7 +879,13 @@ def experience_items(lines, start, end, limit):
             name = clean_label(h.group(1))
             name = name.split("대비 ")[-1] if "대비 " in name else name  # '…사정액 대비 최근 5년간 해당업종 실적누계액 비율'
             heading = {"name": name, "cap": float(h.group(2)), "bonus": "가산점" in line}
+            band_ok = True
+        if re.search(r"억원.*공사\s*평점\s*$", line):
+            b = parse_band(line, None)
+            band_ok = not (b and price is not None and in_band(price, b) is False)
         f = FRACTION.search(line.replace("~", " ").replace("`", " "))
+        if f and not band_ok:
+            continue  # 다른 금액 구간의 산식
         if f:
             num_raw, den = f.group(1), f.group(2)
             mult = re.search(r"(?:×|TIMES)\s*(\d+(?:\.\d+)?)\s*(?:/\s*(\d+))?", den)
@@ -969,14 +976,76 @@ def other_experience_items(sec, found):
                         "formula": f"min({cap:g} × 경력일수 / (365 × {years}), {cap:g})"
                                    + (f" × ({ten.group(2)}% if 재직 {ten.group(1)}일 미만)" if ten else ""),
                         "params": params})
-        elif "숙지도" in name:  # 표 없이 '광역시·도에 본점이 있으면 배점'
+        elif "양성" in name and "보유" in name and (wf := workforce_rule(item_body(sec, k))):
+            out.append({**base, "rule_type": "FORMULA", "input_key": "workforce_grade",
+                        "formula": wf.pop("formula"), "params": wf})
+        elif "숙지도" in name:  # 표 없이 '광역시·도에 본점이 있으면 배점' (사업소별 표가 있으면 office_table 이 대신함)
+            cond = office_condition(item_body(sec, k), cap)
             out.append({**base, "rule_type": "FIXED", "input_key": "office_location", "category": "OFFICE",
-                        "params": {"score": cap, "condition": "공사현장이 속한 광역시·특별시·특별자치도·도에 본점 소재"}})
+                        "params": {"score": cap, "condition": cond}} if cond else
+                       {**base, "rule_type": "GROUP", "category": "OFFICE", "review": True,
+                        "params": {"설명": sec[k + 1].strip()[:200] if k + 1 < len(sec) else None}})
         else:
             out.append({**base, "rule_type": "GROUP", "params": {"설명": sec[k + 1].strip()[:200] if k + 1 < len(sec)
                                                                   else None}, "review": True})
         known.append(key)
     return out
+
+
+def item_body(sec, k):
+    """시공경험 항목 k 의 본문 (다음 항목 제목 전까지)"""
+    body = []
+    for line in sec[k + 1:]:
+        if OTHER_HEAD.match(line):
+            break
+        body.append(line)
+    return body
+
+
+def office_condition(body, cap):
+    """숙지도 본문 '○ 평가기준 : … 광역시 … 또는 도에 법인등기부상 본점소재지(…)를 두고 있어 …' → 조건 문구.
+    해당이면 배점 전부(cap)를 주는 방식만 받는다: 평가기준이 없거나 본문에 배점과 다른 점수가 있으면 None"""
+    text = " ".join(body)
+    m = re.search(r"평가\s*기준\s*[:：]?\s*(.+?본점\s*소재지)", re.sub(r"\([^()]*\)", "", text))
+    if not m or any(abs(float(v) - cap) > 1e-9 for v in re.findall(r"(\d+(?:\.\d+)?)\s*점", text)):
+        return None
+    return re.sub(r"\s+", " ", m.group(1)).strip()[:200]
+
+
+def workforce_rule(body):
+    """변전 '전기원 양성 또는 보유실적': 평점 = 양성실적(1인당 점수, 상한) + 보유실적(등급별 1인당 점수),
+    평점합계 구간('평점합계가 5점이상 / … | 3.5 / 2.4 / 1.2')으로 점수. 못 읽으면 None"""
+    rows = None
+    for line in body:
+        mins = re.findall(r"평점\s*합계가\s*(\d+(?:\.\d+)?)\s*점\s*이상", line)
+        if len(mins) >= 2:
+            scores = [float(x) for x in re.findall(r"\d+(?:\.\d+)?", split_cells(line)[-1])]
+            if len(scores) == len(mins):
+                rows = sorted(({"min": float(m), "score": s} for m, s in zip(mins, scores)), key=lambda r: -r["min"])
+            break
+    trained, held, part = None, [], None
+    for i, line in enumerate(body):
+        if "|" not in line and re.search(r"양성\s*실적\s*평가\s*기준", line):  # 표 칸 안 '보유실적 평가기준일' 제외
+            part = "trained"
+            cap = re.search(r"상한은?\s*(\d+(?:\.\d+)?)\s*점", line)
+            trained = {"per_unit": None, "cap": float(cap.group(1)) if cap else None}
+        elif "|" not in line and re.search(r"보유\s*실적\s*평가\s*기준", line):
+            part = "held"
+        elif part and line != "[표]" and not line.startswith("구분"):
+            cells = split_cells(line)
+            if len(cells) >= 2 and re.fullmatch(r"\s*\d+(?:\.\d+)?\s*", cells[1]):
+                if part == "trained" and trained["per_unit"] is None:
+                    trained["per_unit"] = float(cells[1])
+                elif part == "held":
+                    grade = re.search(r"(\d)\s*급", cells[0])
+                    held.append({"name": f"{grade.group(1)}급" if grade else clean_label(cells[0].replace(" / ", " ")),
+                                 "per_unit": float(cells[1])})
+    if not (rows and trained and trained["per_unit"] and trained["cap"] and held):
+        return None
+    held_text = " + ".join(f"{h['name']} 인원 × {h['per_unit']:g}" for h in held)
+    table = ", ".join(f"{r['min']:g}점 이상 {r['score']:g}" for r in rows)
+    return {"trained": trained, "held": held, "rows": rows,
+            "formula": f"평점합계 = min(양성 인원 × {trained['per_unit']:g}, {trained['cap']:g}) + {held_text} → {table}"}
 
 
 def office_table(lines, start, end):
@@ -1017,9 +1086,9 @@ def bonus_table_fits(lines, s, price, gosi, special):
     표 위쪽 가장 가까운 금액 구간 제목('가. 추정가격 50억원 미만 10억원 이상인 공사')이 추정가격에 맞아야 한다."""
     for j in range(s - 1, -1, -1):
         line = lines[j]
-        if line.startswith("[서식") or line.startswith("[별지"):
-            return False
-        if line.startswith("[별표"):
+        if re.match(r"\s*[\[【](?:서식|별지)", line) or re.match(r"\s*【부\s*표", line):
+            return False  # 【부표 2-x】: 설계 사업수행능력(PQ) 평가표 — 신인도 아님
+        if re.match(r"\s*[\[【]별\s*표", line):  # '[별표 3]', '【별표 3】' 둘 다
             break
     # 금액 구간이 'Ⅰ. 추정가격 …'처럼 문서 최상위로 나뉜 양식(송전·변전)이 아니면, 다른 [별표]의 구간 제목은 보지 않는다
     # (용역·감리: [별표 1] 구간별 배점표 뒤의 [별표 2] 신인도·[별표 11] 평가표는 모든 구간에 공통)
@@ -1027,9 +1096,10 @@ def bonus_table_fits(lines, s, price, gosi, special):
     section_seen = False  # '2. 신인도'처럼 구간 하위('가.','나.')를 끝내는 상위 절 제목을 지났는지
     for j in range(s - 1, -1, -1):
         line = lines[j]
-        if not roman_doc and line.startswith("[별표"):
+        if not roman_doc and re.match(r"\s*[\[【]별\s*표", line):
             return True
-        if re.match(r"\s*\d+\.\s*(?:신인도|가점|감점)", line):
+        if re.match(r"\s*\d+\.\s*(?:신인도|가점|감점)", line) or re.match(r"\s*주\s*\d+\)", line):
+            # '주3) 입찰가격 평가계산식' 같은 주석 안의 '1. 추정가격 …' 구간은 그 주석 것이라 신인도 표 구간이 아님 (변전)
             section_seen = True
         if BAND_HEAD.match(line):
             if section_seen and not re.match(r"\s*[ⅠⅡⅢⅣ]", line):
@@ -1789,7 +1859,7 @@ def extract_notice(db, notice_no, docs=None):
                 f"시공경험 세부 배점({', '.join(f'{v:g}' for v in other)}점)이 배점표({exp['max_score']:g}점)와 달라 "
                 "환산 양식으로 보임 — 원문 확인 필요" if other else "시공경험 세부 절 못 찾음")
             continue
-        exp_items, digits, _ = experience_items(lines, sec[0], sec[1], exp["max_score"])
+        exp_items, digits, _ = experience_items(lines, sec[0], sec[1], exp["max_score"], price)
         issues = []
         if not exp_items:
             issues.append("시공경험 산식 못 찾음")
@@ -1857,6 +1927,19 @@ def extract_notice(db, notice_no, docs=None):
                             parameters={"group": r["item_name"], "condition": cell.split(" / A.")[0][:300],
                                         "rows": grade_rows, **grade_input(grade_rows)},
                             source_location="[별표 1] 배점표 > 신인도 등급", source_quote=r["source_quote"])
+                        continue
+                    # 배전 용역 '일자리창출 우대 가점': '(①과 ②의 평가점수를 합산) / ① … / ② … | +2.5 / +0.5'
+                    # → 고르는 등급이 아니라 따로 더하는 항목이라 ①·② 를 각각 해당/비해당으로 받는다
+                    marks = [g.strip() for g in cell.split(" / ") if re.match(r"\s*[①-⑨]", g)]
+                    if len(marks) >= 2 and len(marks) == len(scores) and "합산" in cell:
+                        in_table = True
+                        for g, sc in zip(marks, scores):
+                            one = add_grade_bounds([{"grade": g, "score": sc}])
+                            add(parent=i, category="BONUS", item_name=f"{r['item_name']} {g[0]}", rule_type="TABLE",
+                                max_score=None, input_key="bonus_grade",
+                                parameters={"group": r["item_name"], "condition": g[:300], "rows": one,
+                                            **grade_input(one)},
+                                source_location="[별표 1] 배점표 > 신인도 항목", source_quote=r["source_quote"])
         if not found and not in_table:
             result["detail_issues"].append("신인도 세부 표 못 찾음")
         # 감리 가점·감점 항목이 표 2개에 같은 이름으로 나오면(배점표·세부표 양식이 섞인 공고) 어느 쪽인지 몰라 REVIEW

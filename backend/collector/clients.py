@@ -161,6 +161,22 @@ class SrmClient:
         rows = [r for r in _records(self.rpc(SEARCH, "getPageList", [query])) if r.get("announceNo") == notice_no]
         return rows[0] if rows else None
 
+    def list_notices(self, begin, end):
+        """SRM 입찰공고 목록 (Open API 장애 때 대신 씀): 한전·공사입찰·적격심사, 공고일 begin~end → 검색 결과 행."""
+        rows, page = [], 1
+        while True:
+            query = {"companyId": "COM01", "rfxType": "ServiceBid", "bidType": "QualifiedEval",
+                     "fromSearchDate": begin.isoformat() + "T00:00:00", "toSearchDate": end.isoformat() + "T23:59:59",
+                     "searchDateType": "NoticeDateTime", "searchType": "AnnounceNo", "searchText": "",
+                     "page": page, "start": (page - 1) * 100, "limit": 100, "totalCount": None}
+            result = self.rpc(SEARCH, "getPageList", [query])
+            records = _records(result)
+            rows += records
+            total = result.get("total") if isinstance(result, dict) else None
+            if len(records) < 100 or (total is not None and len(rows) >= total):
+                return rows
+            page += 1
+
     def basic_info(self, bid_id):
         return self.rpc(DETAIL, "findBidBasicInfo", [bid_id])
 

@@ -338,7 +338,11 @@ def collect_srm(db, srm, notice_no, found_kinds):
                   WHERE notice_no=?""",
                (to_int(basic.get("totalAAmt")), to_int(basic.get("overHeadCostAmount")),
                 basic.get("openBidDateTime"), None if revision is None else str(revision), notice_no))
-    evals = {k: basic.get(camel(k)) for k in EVAL_KEYS}
+    # 공사/용역 구분·사정액: 공식 API 값이 우선, 없을 때(--srm-list 로 받은 공고)만 SRM 상세로 채운다
+    db.execute("""UPDATE bid_notice SET item_type=COALESCE(item_type, ?),
+                  approximate_amount=COALESCE(approximate_amount, ?) WHERE notice_no=?""",
+               (basic.get("itemType"), to_int(basic.get("approximateAmount")), notice_no))
+    evals ={k: basic.get(camel(k)) for k in EVAL_KEYS}
     raw = {"search": sanitize({k: row.get(k) for k in ("announceNo", "areaCodeName", "limitedReasonCode")}),
            "basic": {camel(k): v for k, v in evals.items()}, "items": sanitize(items)}
     db.execute(f"""INSERT OR REPLACE INTO bid_restriction_snapshot (notice_no, fetch_status, error,
@@ -482,6 +486,43 @@ def fetch_list(api_key, begin, end):
     return rows, failed
 
 
+def srm_list_row(r):
+    """SRM 목록 행 → 공식 API 행 모양 (--srm-list). SRM 목록엔 등록일시·첨부 링크가 없어 첨부는 SRM 에서 받는다."""
+    at = lambda v: v[:19].replace("T", " ") if v else None  # '2026-11-30T18:00:00.000+09:00' → KST 문자열
+    return {"no": r["announceNo"], "companyId": "COM01", "name": r.get("announceName"),
+            "purchaseType": "ConstructionService", "bidType": r.get("bidType"),
+            "noticeDate": (r.get("announceDate") or "")[:10].replace("-", "") or None,
+            "bidAttendReqBeginDatetime": at(r.get("startRequestDate")),
+            "bidAttendReqCloseDatetime": at(r.get("endRequestDate")),
+            "beginDatetime": at(r.get("startProposalDate")), "endDatetime": at(r.get("endProposalDate")),
+            "presumedPrice": r.get("presumedprice"),
+            "progressState": "Cancel" if r.get("progressStatus") == "Cancel" else "AttendProgress",
+            "listSource": "SRM"}
+
+
+def fetch_srm_list(begin, end, interval):
+    """Open API 대신 SRM 목록 → (행 목록, 실패 목록)."""
+    try:
+        return [srm_list_row(r) for r in clients.SrmClient(interval=interval).list_notices(begin, end)], []
+    except Exception as exc:
+        return [], [f"SRM 목록 {begin}~{end}: {type(exc).__name__}: {str(exc)[:120]}"]
+
+
+def llm_evaluation_target(db):
+    """LLM 으로 산식을 보완할 공고 1건: 접수 중 + 기준서 규칙 추출 실패 + 아직 LLM 결과 없음 → 신청 마감이 가까운 순.
+    없으면 None. LLM 이 실패하면 저장된 게 없어 다음 실행에서 다시 고른다."""
+    from ai.llm_evaluation import needs_evaluation_fallback
+    rows = db.execute("""
+        SELECT DISTINCT n.notice_no, n.attend_req_close_at FROM bid_notice n
+        JOIN bid_attachment a ON a.notice_no = n.notice_no AND a.doc_kind = 'CRITERIA'
+        JOIN bid_document_content c ON c.attachment_id = a.id AND c.rule_extracted = 0
+        WHERE n.company_id_src = 'COM01' AND n.purchase_type = 'ConstructionService' AND n.bid_type = 'QualifiedEval'
+          AND n.is_open = 1 AND (n.attend_req_close_at IS NULL OR n.attend_req_close_at >= ?)
+        ORDER BY n.attend_req_close_at IS NULL, n.attend_req_close_at, n.notice_no""",
+                      (datetime.now().strftime("%Y-%m-%d %H:%M:%S"),)).fetchall()
+    return next((no for no, _ in rows if needs_evaluation_fallback(db, no)), None)
+
+
 def detail_targets(db, args, new_nos):
     """상세 수집 대상 (DB 기준): 신규·정정·첨부변경(needs_recollect)·이전에 못 끝낸 공고. 완료 공고는 재사용."""
     if args.notice:
@@ -546,13 +587,22 @@ def main():
     ap.add_argument("--srm-revision-check", type=int, default=0, metavar="N",
                     help="완료된 진행 중 공고 N건의 SRM 정정 차수를 다시 확인 (SRM만 바뀐 경우 감지, 기본 0)")
     ap.add_argument("--refresh", action="store_true", help="이미 수집한 공고도 다시 처리")
-    ap.add_argument("--with-llm", action="store_true", help="배점 저장 후 실패 산식·서류를 LLM으로 보완 (유료)")
+    ap.add_argument("--with-llm", action="store_true",
+                    help="배점 저장 후 서류를 LLM으로 보완, 규칙 추출 실패 산식은 실행당 1건만 LLM으로 보완 (유료, 하루 1회 실행)")
+    ap.add_argument("--srm-list", action="store_true",
+                    help="Open API 장애 때 목록을 SRM 에서 받음 (일회성). DB에 없는 새 공고만 추가, 마지막 반영 시점은 안 옮김")
     ap.add_argument("--dry-run", action="store_true", help="목록 저장 후 상세 수집 대상만 출력 (SRM 요청 없음)")
     args = ap.parse_args()
     after_evaluation = None
     if args.with_llm:
+        from ai.llm_evaluation import needs_evaluation_fallback
         from ai.notice_extraction import process_notice_extraction
-        after_evaluation = process_notice_extraction
+
+        def after_evaluation(db, notice_no):
+            # 산식 LLM 이 필요한 공고는 여기서 부르지 않고 수집 끝에 1건만 (llm_evaluation_target)
+            if needs_evaluation_fallback(db, notice_no):
+                return {"notice_no": notice_no, "evaluation": {"status": "deferred"}}
+            return process_notice_extraction(db, notice_no)
     conf = MODE_DEFAULTS[args.mode]
     interval = args.interval or conf["interval"]
 
@@ -562,14 +612,20 @@ def main():
     db.commit()
     today = date.today()
     begin, end, why = list_window(db, args, today)
-    rows, list_errors = fetch_list(clients.load_api_key(ROOT), begin, end)
+    if args.srm_list:
+        rows, list_errors = fetch_srm_list(begin, end, interval)
+    else:
+        rows, list_errors = fetch_list(clients.load_api_key(ROOT), begin, end)
     rows = latest_per_notice(rows)
-    list_synced = int(not list_errors)
+    # SRM 목록은 대체용: 반영 시점을 옮기지 않아 Open API 가 돌아오면 같은 기간을 공식 API 로 다시 받는다
+    list_synced = int(not list_errors and not args.srm_list)
     wanted = set(args.notice or [])
     changes = {NEW: [], UPDATED: [], CORRECTED: []}
     for row in rows:  # 서비스 범위 밖 공고는 저장하지 않음 (직접 지정한 공고는 예외)
         if not (row["no"] in wanted or in_scope(row)):
             continue
+        if args.srm_list and db.execute("SELECT 1 FROM bid_notice WHERE notice_no=?", (row["no"],)).fetchone():
+            continue  # 공식 API 로 받은 공고는 SRM 모양으로 덮어쓰지 않음
         # [알림 연결 지점] NEW = 공식 API에서 처음 본 공고 (실행 후에는 first_seen_at >= collect_run.started_at)
         change = upsert_notice(db, row)
         if change in changes:
@@ -579,7 +635,7 @@ def main():
                (begin.strftime("%Y%m%d"), end.strftime("%Y%m%d"), list_synced, len(rows), len(changes[NEW]),
                 len(changes[UPDATED]), len(changes[CORRECTED]), run_id))
     db.commit()
-    print(f"[{args.mode}] 목록 {begin}~{end} ({why}): 공식 API {len(rows)}건 → 서비스 범위 "
+    print(f"[{args.mode}] 목록 {begin}~{end} ({why}): {'SRM' if args.srm_list else '공식 API'} {len(rows)}건 → 서비스 범위 "
           f"{sum(map(in_scope, rows))}건 / 신규 {len(changes[NEW])}, 기본정보 갱신 {len(changes[UPDATED])}, "
           f"정정·첨부변경 {len(changes[CORRECTED])}")
     for err in list_errors:
@@ -647,6 +703,18 @@ def main():
                   flush=True)
             if conf["pause_every"] and processed % conf["pause_every"] == 0 and i < len(targets):
                 time.sleep(conf["pause_seconds"])
+        if args.with_llm:  # LLM 비용 제한: 산식 보완은 실행당 1건. 실패하면 그대로 남아 다음 실행에서 다시 대상
+            db.commit()
+            target = llm_evaluation_target(db)
+            if target is None:
+                print("LLM 산식 보완: 대상 없음")
+            else:
+                try:
+                    result = process_notice_extraction(db, target)
+                except Exception as exc:
+                    db.rollback()
+                    result = {"notice_no": target, "error": f"{type(exc).__name__}: {exc}"[:300]}
+                print(f"LLM 산식 보완 (1건): {json.dumps(result, ensure_ascii=False)}")
     except clients.SrmBlocked as exc:
         reason = f"SRM 차단 의심으로 중단: {exc}"
         print(reason)

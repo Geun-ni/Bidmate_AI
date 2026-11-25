@@ -97,6 +97,15 @@ def _leaf(node, inputs, ctx):
             return _result(node, None, UNCALC)
         raw = float(value or 0) * p["per_unit"] + (float(sp_value or 0) * sp["per_unit"] if sp else 0)
         return _result(node, _round(min(raw, p["cap"]), node["rounding"]))
+    if rt == "FORMULA" and ik == "workforce_grade":  # 변전 전기원: 양성(상한) + 보유(등급별) → 평점합계 구간 점수
+        held = [inputs.get(f"{key}_held_{i}") for i in range(len(p["held"]))]  # 보유 인원 (예: 1급, 2급 순)
+        if value is None and all(h is None for h in held):
+            return _result(node, None, UNCALC)
+        tr = p["trained"]
+        total = min(float(value or 0) * tr["per_unit"], tr["cap"]) + sum(
+            float(c or 0) * h["per_unit"] for c, h in zip(held, p["held"]))
+        row = next((r for r in p["rows"] if total >= r["min"] - 1e-9), None)  # rows: min 큰 순
+        return _result(node, row["score"] if row else 0, note=f"평점합계 {total:g}점")
     if rt == "FORMULA" and ik == "engineer_days":
         if value is None:
             return _result(node, None, UNCALC)
