@@ -12,7 +12,7 @@ import "./QnaPanel.css";
  * - 오른쪽 하단 고정 버튼 → 오른쪽에서 열리는 패널 (휴대폰은 전체 화면)
  * - 공고 상세에서 열면 그 공고를 질문 기준으로 붙인다 (notice_no를 함께 보냄)
  * - 처음 열 때 책임 고지에 동의해야 질문할 수 있다 (브라우저에 기억)
- * - 답변: 백엔드 POST /api/qna (LLM)가 있으면 그 답을, 없으면(404) 화면이 가진 데이터로 규칙 기반 답(lib/qna.js)
+ * - 답변: 백엔드 POST /api/qna. 기존 목록·업체 답변 경로는 서버의 delegate 응답으로 이어받는다.
  */
 
 const QnaContext = createContext(null);
@@ -97,7 +97,7 @@ export default function QnaPanel() {
     if (!q || busy) return;
     const id = Date.now();
     const history = messages
-      .filter((m) => m.kind === "answer" || m.kind === "local" || m.role === "user")
+      .filter((m) => m.role === "user" && m.notice === pinned)
       .slice(-HISTORY_LIMIT)
       .map((m) => ({ role: m.role, text: m.text }));
     setMessages((ms) => [...ms, { id, role: "user", text: q, notice: pinned }, { id: id + 1, role: "assistant", kind: "pending", text: "", question: q }]);
@@ -112,7 +112,9 @@ export default function QnaPanel() {
           company_id: testMode ? undefined : company?.id, // 테스트 업체는 서버에 없다
           history,
         });
-        reply = { kind: "answer", text: r.answer ?? "(빈 답변)", sources: r.sources ?? [] };
+        if (r.delegate !== "local") {
+          reply = { kind: "answer", text: r.answer ?? "(빈 답변)", sources: r.sources ?? [] };
+        }
       } catch (e) {
         if (e.status === 404) qnaApiMissing = true;
         else reply = { kind: "error", text: `답변을 받지 못했습니다: ${e.message}`, retry: q };
@@ -223,15 +225,24 @@ export default function QnaPanel() {
                         <>
                           <p className="qna-bubble">{m.text}</p>
                           {m.sources?.length > 0 && (
-                            <p className="xsmall muted qna-sources">
-                              근거:{" "}
-                              {m.sources.map((s, i) => (
-                                <span key={i}>
-                                  {i > 0 && ", "}
-                                  {s.notice_no ? <Link to={`/notices/${s.notice_no}`}>{s.label ?? s.notice_no}</Link> : s.label}
-                                </span>
-                              ))}
-                            </p>
+                            <div className="xsmall muted qna-sources">
+                              근거
+                              {m.sources.map((s, i) => {
+                                const excerpt = s.excerpt || (s.field === "bid_restriction" ? m.text : "");
+                                const label = s.label ?? s.notice_no;
+                                return excerpt ? (
+                                  <details key={i}>
+                                    <summary>{label}</summary>
+                                    <div className="qna-source-excerpt">{excerpt}</div>
+                                  </details>
+                                ) : (
+                                  <div key={i}>
+                                    {s.notice_no && s.notice_no !== pinned
+                                      ? <Link to={`/notices/${s.notice_no}`}>{label}</Link> : label}
+                                  </div>
+                                );
+                              })}
+                            </div>
                           )}
                           {(m.kind === "answer" || m.kind === "local") && (
                             <>

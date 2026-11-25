@@ -85,7 +85,7 @@ def request_payload(notice, sources, model, max_output_tokens, rule_candidates=N
     }
 
 
-def call_openai(payload, api_key, attempts=3):
+def call_openai(payload, api_key, attempts=3, timeout=180):
     request = Request(
         "https://api.openai.com/v1/responses",
         data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
@@ -94,7 +94,7 @@ def call_openai(payload, api_key, attempts=3):
     )
     for attempt in range(attempts):
         try:
-            with urlopen(request, timeout=180) as response:
+            with urlopen(request, timeout=timeout) as response:
                 return json.load(response)
         except HTTPError as error:
             # Avoid printing remote response bodies or credentials.
