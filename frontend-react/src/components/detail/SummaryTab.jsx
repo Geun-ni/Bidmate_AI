@@ -3,6 +3,7 @@ import { CATEGORY_LABEL, ruleDetail, useEvaluation } from "../../lib/useEvaluati
 import { useAppState } from "../../state/AppState.jsx";
 import { Disclaimer, EmptyState, JudgmentBadge, NoticeBox, Source, Term } from "../ui.jsx";
 import Attachments from "./Attachments.jsx";
+import { FeedbackReaction } from "../Feedback.jsx";
 
 export default function SummaryTab({ notice }) {
   const { company, testMode } = useAppState();
@@ -61,6 +62,9 @@ export default function SummaryTab({ notice }) {
         <div style={{ marginTop: 12 }}>
           <Disclaimer>SRM 자동심사를 충족해도 최종 참가 자격을 보장하지 않습니다. 공고문의 추가 조건(실적·대기업 제한·공동수급 등)과 담당자 확인이 우선합니다.</Disclaimer>
         </div>
+        {judgment.overall && (
+          <FeedbackReaction target="judgment" refId={notice.id} question="이 판정이 맞나요?" extra={{ overall: judgment.overall }} />
+        )}
       </section>
 
       <section className="card card-pad" aria-labelledby="sum-extra" data-reveal>

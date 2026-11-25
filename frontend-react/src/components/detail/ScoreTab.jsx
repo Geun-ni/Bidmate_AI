@@ -8,6 +8,7 @@ import { useAppState } from "../../state/AppState.jsx";
 import MoneyInput from "../MoneyInput.jsx";
 import Select from "../Select.jsx";
 import { EmptyState, NoticeBox, Term } from "../ui.jsx";
+import { FeedbackReaction } from "../Feedback.jsx";
 import "./ScoreTab.css";
 
 /**
@@ -669,6 +670,15 @@ export default function ScoreTab({ notice }) {
           <RuleBody node={node} get={get} set={set} results={results} />
         </section>
       ))}
+
+      <section className="card card-pad">
+        <FeedbackReaction
+          target="score"
+          refId={notice.id}
+          question="이 공고의 배점·산식과 계산 결과가 실제 기준서와 맞나요?"
+          extra={{ total: result?.total ?? null, pass_score: pass }}
+        />
+      </section>
     </div>
   );
 }

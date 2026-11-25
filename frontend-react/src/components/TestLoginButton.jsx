@@ -1,7 +1,7 @@
 import { useNavigate } from "react-router-dom";
 import { useAppState } from "../state/AppState.jsx";
 
-/** 테스트용 자동 로그인 버튼 (개발 서버에서만 보인다. 배포 빌드에는 나오지 않음) */
+/** 테스트용 자동 로그인 버튼 (개발 서버 + .env.local 의 VITE_TEST_LOGIN=1 일 때만 보인다. 배포 빌드에는 나오지 않음) */
 export default function TestLoginButton({ to = "/" }) {
   const { testEnabled, startTestMode } = useAppState();
   const navigate = useNavigate();

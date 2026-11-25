@@ -21,6 +21,22 @@ export function koreanWon(value) {
   return `${parts.join(" ")}원`;
 }
 
+/**
+ * 짧은 한글 금액 (화면 표시용): 1억 이상은 억 단위 소수 둘째 자리까지(셋째 자리에서 반올림),
+ * 1억 미만은 만 원 단위로 반올림. 598,287,000 → "5.98억", 1,261,490,000 → "12.61억", 29,929,234 → "2,993만"
+ */
+export function shortKoreanWon(value) {
+  if (value === null || value === undefined || Number.isNaN(value)) return "";
+  const n = Math.abs(value);
+  const sign = value < 0 ? "-" : "";
+  if (n >= 1e8 || Math.round(n / 1e4) >= 1e4) {
+    const eok = Math.round((n / 1e8) * 100) / 100;
+    return `${sign}${eok.toLocaleString("ko-KR", { maximumFractionDigits: 2 })}억`;
+  }
+  if (n >= 1e4) return `${sign}${wonFormatter.format(Math.round(n / 1e4))}만`;
+  return `${sign}${wonFormatter.format(n)}원`;
+}
+
 /** "463,855,784" 같은 입력 문자열 → 숫자 (빈 값은 null) */
 export function parseMoney(text) {
   const digits = String(text ?? "").replace(/[^\d]/g, "");
@@ -77,4 +93,22 @@ export function sameDay(a, b) {
 
 export function round2(n) {
   return Math.round(n * 100) / 100;
+}
+
+/**
+ * 마감까지 남은 시간 (분 단위까지): "1일 5시간 남음", "3시간 20분 남음", "12분 남음". 지났으면 null.
+ * 공고 카드의 D-day는 달력 날짜 기준이라, 헷갈리지 않게 'D-'를 붙이지 않고 실제 남은 시간으로 쓴다.
+ */
+export function timeLeft(iso, now = new Date()) {
+  const d = toDate(iso);
+  if (!d) return null;
+  const ms = d.getTime() - now.getTime();
+  if (ms <= 0) return null;
+  const min = Math.floor(ms / 60000);
+  const days = Math.floor(min / 1440);
+  const hours = Math.floor((min % 1440) / 60);
+  const mins = min % 60;
+  if (days > 0) return `${days}일${hours ? ` ${hours}시간` : ""} 남음`;
+  if (hours > 0) return `${hours}시간${mins ? ` ${mins}분` : ""} 남음`;
+  return `${Math.max(1, mins)}분 남음`;
 }

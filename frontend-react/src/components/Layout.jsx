@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
-import { NavLink, Outlet, useLocation } from "react-router-dom";
+import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
 import { scrollToTop, useScrollReveal, useSmoothScroll } from "../lib/motion.js";
 import { useAppState } from "../state/AppState.jsx";
 import QnaPanel, { QnaProvider } from "./QnaPanel.jsx";
+import { FeedbackProvider, useFeedback } from "./Feedback.jsx";
 
 /** 지금 화면에 실제로 적용된 모드 (자동이면 시스템 설정을 따른다) */
 function useEffectiveTheme(theme) {
@@ -24,6 +25,7 @@ const FONTS = [
 
 function Header() {
   const { theme, setTheme, fontSize, setFontSize, user, signOut } = useAppState();
+  const { openFeedback } = useFeedback();
   const effective = useEffectiveTheme(theme);
   const isDark = effective === "dark";
   const toggleLabel = isDark ? "라이트 모드로 전환" : "다크 모드로 전환";
@@ -40,7 +42,7 @@ function Header() {
     <header className={`topbar${scrolled ? " scrolled" : ""}`}>
       <div className="wrap topbar-inner">
         <NavLink to="/" className="brand">
-          <span className="brand-mark" aria-hidden="true">입</span>
+          <img className="brand-logo" src="/favicon.svg" alt="" aria-hidden="true" width="30" height="30" />
           입찰메이트
         </NavLink>
         <nav className="topbar-nav" aria-label="주 메뉴">
@@ -48,6 +50,10 @@ function Header() {
           <NavLink to="/company">업체정보</NavLink>
         </nav>
         <div className="topbar-tools">
+          <button type="button" className="btn btn-sm btn-ghost fb-open" onClick={() => openFeedback()} title="베타테스트 의견 보내기">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /><path d="M8 9h8M8 13h5" /></svg>
+            <span className="fb-open-label">의견 보내기</span>
+          </button>
           {user === undefined ? null : user ? (
             <span className="user-menu">
               <span className="small muted user-name" title={user.email}>
@@ -98,6 +104,7 @@ export default function Layout() {
 
   return (
     <QnaProvider>
+      <FeedbackProvider>
       <Header />
       <main className="wrap page">
         <Outlet />
@@ -106,6 +113,7 @@ export default function Layout() {
         입찰메이트는 참고용 서비스이며 법적 효력이 없습니다. 추천·예상 점수는 1차 검토 결과이며 낙찰을 보장하지 않습니다. 최종 확인은 공고 원문과 발주처 기준에 따릅니다.
       </footer>
       <QnaPanel />
+      </FeedbackProvider>
     </QnaProvider>
   );
 }

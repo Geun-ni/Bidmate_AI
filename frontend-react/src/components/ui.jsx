@@ -1,7 +1,7 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { GLOSSARY } from "../lib/glossary.js";
-import { dday, koreanWon, won } from "../lib/format.js";
+import { dday, shortKoreanWon, won } from "../lib/format.js";
 
 /* ───────── 판정 상태 ───────── */
 export const JUDGMENT = {
@@ -70,7 +70,7 @@ export function Money({ value, showKorean = true }) {
   return (
     <span className="num">
       {won(value)}
-      {showKorean && <span className="muted small"> ({koreanWon(value)})</span>}
+      {showKorean && <span className="muted small"> ({shortKoreanWon(value)})</span>}
     </span>
   );
 }

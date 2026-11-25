@@ -1,6 +1,8 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { askQna } from "../api/client.js";
+import { askQna, fetchEvaluation, fetchNotice, fetchNoticeSchedule } from "../api/client.js";
+import { answer as localAnswer } from "../lib/qna.js";
+import { FeedbackReaction } from "./Feedback.jsx";
 import { load, save } from "../lib/storage.js";
 import { useAppState } from "../state/AppState.jsx";
 import "./QnaPanel.css";
@@ -10,7 +12,7 @@ import "./QnaPanel.css";
  * - 오른쪽 하단 고정 버튼 → 오른쪽에서 열리는 패널 (휴대폰은 전체 화면)
  * - 공고 상세에서 열면 그 공고를 질문 기준으로 붙인다 (notice_no를 함께 보냄)
  * - 처음 열 때 책임 고지에 동의해야 질문할 수 있다 (브라우저에 기억)
- * - 답변은 백엔드 POST /api/qna 가 만든다. 경로가 없으면(404) '준비 중'으로 안내
+ * - 답변: 백엔드 POST /api/qna (LLM)가 있으면 그 답을, 없으면(404) 화면이 가진 데이터로 규칙 기반 답(lib/qna.js)
  */
 
 const QnaContext = createContext(null);
@@ -22,6 +24,7 @@ const DISCLAIMER =
 const SUGGEST_NOTICE = ["우리 업체가 이 공고에 참가할 수 있어?", "적격심사 통과 기준점수는?", "이 공고 일정 정리해줘", "A값이 얼마야?"];
 const SUGGEST_GENERAL = ["이번 주에 마감되는 공고 알려줘", "우리 업체가 참가 가능한 공고는?", "적격심사가 뭐야?", "A값이 뭐야?"];
 const HISTORY_LIMIT = 6; // 이전 대화는 최근 6개만 함께 보낸다
+let qnaApiMissing = false; // 백엔드 질문 API가 없다고 확인되면 이번 접속 동안은 바로 규칙 기반으로 답한다
 
 /** 지금 주소가 공고 상세면 그 공고번호 */
 function noticeFromPath(pathname) {
@@ -60,7 +63,7 @@ export function QnaProvider({ children }) {
 /** 오른쪽 하단 고정 버튼 + 패널 */
 export default function QnaPanel() {
   const { open, setOpen, openQna, pinned, setPinned, messages, setMessages, consent, agree } = useQna();
-  const { company, testMode, notices } = useAppState();
+  const { company, testMode, notices, withJudgment } = useAppState();
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [checked, setChecked] = useState(false);
@@ -94,26 +97,43 @@ export default function QnaPanel() {
     if (!q || busy) return;
     const id = Date.now();
     const history = messages
-      .filter((m) => m.kind === "answer" || m.role === "user")
+      .filter((m) => m.kind === "answer" || m.kind === "local" || m.role === "user")
       .slice(-HISTORY_LIMIT)
       .map((m) => ({ role: m.role, text: m.text }));
-    setMessages((ms) => [...ms, { id, role: "user", text: q, notice: pinned }, { id: id + 1, role: "assistant", kind: "pending", text: "" }]);
+    setMessages((ms) => [...ms, { id, role: "user", text: q, notice: pinned }, { id: id + 1, role: "assistant", kind: "pending", text: "", question: q }]);
     setText("");
     setBusy(true);
-    let reply;
-    try {
-      const r = await askQna({
-        question: q,
-        notice_no: pinned ?? undefined,
-        company_id: testMode ? undefined : company?.id, // 테스트 업체는 서버에 없다
-        history,
-      });
-      reply = { kind: "answer", text: r.answer ?? "(빈 답변)", sources: r.sources ?? [] };
-    } catch (e) {
-      reply =
-        e.status === 404
-          ? { kind: "unavailable", text: "AI 답변 기능은 준비 중입니다. 백엔드 질문 API가 연결되면 이 창에서 바로 답변을 받을 수 있습니다." }
-          : { kind: "error", text: `답변을 받지 못했습니다: ${e.message}`, retry: q };
+    let reply = null;
+    if (!qnaApiMissing) {
+      try {
+        const r = await askQna({
+          question: q,
+          notice_no: pinned ?? undefined,
+          company_id: testMode ? undefined : company?.id, // 테스트 업체는 서버에 없다
+          history,
+        });
+        reply = { kind: "answer", text: r.answer ?? "(빈 답변)", sources: r.sources ?? [] };
+      } catch (e) {
+        if (e.status === 404) qnaApiMissing = true;
+        else reply = { kind: "error", text: `답변을 받지 못했습니다: ${e.message}`, retry: q };
+      }
+    }
+    if (!reply) {
+      // LLM이 없으면 규칙 기반 답변 (공고·배점·일정 데이터)
+      try {
+        let notice = pinned ? notices.find((n) => n.id === pinned) ?? null : null;
+        if (pinned && !notice) notice = withJudgment(await fetchNotice(pinned));
+        const r = await localAnswer(q, {
+          notice,
+          notices,
+          company,
+          loadEvaluation: fetchEvaluation,
+          loadSchedule: fetchNoticeSchedule,
+        });
+        reply = { kind: r.help ? "help" : "local", text: r.text, sources: r.sources };
+      } catch (e) {
+        reply = { kind: "error", text: `답변을 만들지 못했습니다: ${e.message}`, retry: q };
+      }
     }
     setMessages((ms) => ms.map((m) => (m.id === id + 1 ? { ...m, ...reply } : m)));
     setBusy(false);
@@ -144,7 +164,7 @@ export default function QnaPanel() {
           <header className="qna-head">
             <div>
               <h2 id="qna-title">AI에게 질문하기</h2>
-              <p className="xsmall muted">수집한 공고·배점 데이터로 답합니다 · 베타</p>
+              <p className="xsmall muted">수집한 공고·배점·일정 데이터로 답합니다 · 베타</p>
             </div>
             <div className="qna-head-actions">
               {messages.length > 0 && (
@@ -213,7 +233,20 @@ export default function QnaPanel() {
                               ))}
                             </p>
                           )}
-                          {m.kind === "answer" && <p className="xsmall qna-warn">참고용 답변 · 공고 원문 확인 필요</p>}
+                          {(m.kind === "answer" || m.kind === "local") && (
+                            <>
+                              <p className="xsmall qna-warn">
+                                {m.kind === "local" ? "데이터 기반 자동 답변 · " : ""}참고용 답변 · 공고 원문 확인 필요
+                              </p>
+                              <FeedbackReaction
+                                compact
+                                target="qna"
+                                refId={String(m.id)}
+                                question="이 답변이 도움이 됐나요?"
+                                extra={{ question: m.question, answer: m.text.slice(0, 1000), source: m.kind === "local" ? "rule" : "llm", notice_no: m.notice ?? pinned ?? null }}
+                              />
+                            </>
+                          )}
                           {m.kind === "error" && m.retry && (
                             <button type="button" className="btn btn-sm" onClick={() => send(m.retry)}>다시 시도</button>
                           )}
