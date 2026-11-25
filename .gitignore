@@ -15,6 +15,7 @@ dist/
 # 데이터베이스
 *.sqlite3
 *.sqlite3-*
+.local/
 *.sqlite3.bak-*
 
 # 공유·추출용 CSV

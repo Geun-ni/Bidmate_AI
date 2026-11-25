@@ -1,0 +1,164 @@
+﻿notice_no,split,template_group,category,price_band,title
+E012606695,development,G001,other_pq,1b_to_5b,"부안-정읍지역 전기공급시설 전력구공사(서남권 해상풍력 공동접속설비) 설계용역(PQ, SOQ)"
+E012606698,development,G002,supervision,1b_to_5b,김포지역 전기공급시설 전력구공사(걸포분기) 감독권한대행 등 건설사업관리용역
+E012606743,validation,G003,supervision_pq,300m_to_1b,풍기S/S 대용량 1회선 및 일반 1회선 신설공사 감리용역(PQ)
+E012606754,development,G004,supervision_pq,300m_to_1b,"동부안S/S 월천#2, 파산#2D/L 대용량 2회선 신설공사 감리용역(PQ)"
+E012606808,development,G001,other,1b_to_5b,북신갈-신갈-흥덕 전력구 설계용역
+E012606818,test,G005,supervision_pq,300m_to_1b,강원본부 신축 전기공사 감리용역(PQ)
+E012606821,test,G005,supervision_pq,80m_to_300m,(신규공고) 남전주지사 신축 전기공사 감리용역(PQ)
+E012606876,test,G006,supervision,80m_to_300m,동두천-양주 등 5개 전력구 소방감리용역(동두천-양주)
+E012606942,development,G007,other,5b_plus,345kV 북경남-고령T/L 용량증대 선종교체 공사
+E012606944,test,G008,substation,300m_to_1b,345kV 신남면S/S 건설 변전 실시설계용역
+E012606945,test,G008,substation,300m_to_1b,345kV 서이동S/S 건설 변전 실시설계 용역
+E012606946,development,G001,other_pq,300m_to_1b,154kV 화순-곡성T/L 건설사업 자재운반방법 선정용역(PQ)
+E012606947,test,G008,substation,300m_to_1b,345kV 서평택S/S 건설 변전 실시설계 용역
+E012606948,test,G008,substation,300m_to_1b,345kV 신광명#2S/S 건설 변전 실시설계 용역
+E012606960,validation,G009,supervision_pq,300m_to_1b,154kV 아산-예산T/L 용량증대 전선교체공사 감리용역(PQ)
+E012606965,development,G002,supervision_pq,1b_to_5b,154kV 나주S/S ESS 제어동 토건공사 감독권한대행 등 건설사업관리용역(PQ)
+E012606974,development,G007,other,5b_plus,345kV 신옥천-북경남T/L 용량증대 선종교체 공사(1공구)
+E012606999,validation,G010,other_pq,300m_to_1b,154kV 북전주-진안 등 3개 TL 선종교체공사 측량 및 도면작성 용역(PQ)
+E012607001,validation,G011,supervision_pq,300m_to_1b,고흥 다랑도 #1~#4호 해월철탑 보강공사 감리용역(PQ)
+E012607009,validation,G012,supervision_pq,80m_to_300m,달성군수 군도7호선 감문-대평 도로확장 지장주이설공사 감리용역(PQ)
+E012607010,test,G013,supervision_pq,300m_to_1b,한빛NP #3S/Y 362kV GIS 교체공사 책임감리용역(PQ)
+E012607014,development,G004,supervision_pq,80m_to_300m,무주S/S 내도D/L 일반 1회선 신설공사 감리용역(PQ)
+E012607020,validation,G014,other_pq,80m_to_300m,345kV 서남권 해상풍력 공동접속설비 건설사업 자재운반방법 선정용역PQ
+E012607031,development,G015,supervision_pq,300m_to_1b,154kV 완암-안민T/L 4-5호 지장송전선로 이설공사 책임감리용역(PQ)
+E012607053,development,G001,other,1b_to_5b,수원지역 전기공급시설 전력구공사(당수-호매실) 설계용역
+E012607054,validation,G016,substation,1b_to_5b,345kV 신원삼변전소 토건설계 용역
+E012607064,development,G002,supervision_pq,1b_to_5b,154kV 나주S/S ESS 제어동 토건공사 감독권한대행 등 건설사업관리용역(PQ)
+E012607070,development,G001,other_pq,300m_to_1b,345kV 신광산S/S 토건공사 실시설계용역(토목분)(PQ)
+E012607071,test,G013,supervision_pq,80m_to_300m,한빛N/P #2SY 362kV GIS 대체공사 책임감리용역(PQ)
+E012607084,test,G017,other_pq,300m_to_1b,154kV 서영광분기T/L 건설공사 지반조사용역(PQ)
+E012607098,validation,G018,supervision,300m_to_1b,154kV 신성연-태안 지중T/L 건설공사 책임감리용역
+E012607126,test,G008,substation,300m_to_1b,345kV 서화성S/S 건설 변전 실시설계 용역
+E012607127,development,G007,other,5b_plus,345kV 신옥천-북경남T/L 용량증대 선종교체 공사(2공구)
+E012607136,test,G019,other,5b_plus,무안지역 전기공급시설 전력구공사(운남#2-신장성 해저터널 수직구#1)
+E012607140,development,G020,supervision_pq,300m_to_1b,154kV 신정읍-소성T/L 인출변경 건설공사 책임감리용역PQ
+E012607143,development,G002,other_pq,1b_to_5b,154kV 군산-함열T/L 건설사업 철탑기초 실시설계용역PQ
+E012607145,development,G007,other,5b_plus,154kV 하동-정촌 등 2개T/L 장기사용전선교체 및 안전이격거리확보 공사
+E012607165,validation,G021,other,5b_plus,345kV 신광산S/S 토목공사
+E012607222,development,G001,other_pq,80m_to_300m,154kV 금산-무주T/L 선종교체공사 종단설계 기술검토 용역(PQ)
+E012607244,validation,G022,substation_pq,300m_to_1b,345kV 신광산변전소 토건공사 실시설계용역(건축·기계분)(PQ)
+E012607252,development,G002,other_pq,1b_to_5b,154kV 군산-함열T/L 건설사업 철탑기초 실시설계용역PQ
+E012607258,development,G001,other_pq,80m_to_300m,345kV 서남권 해상풍력 공동접속설비 건설사업 자재운반방법 선정용역PQ
+E012607302,development,G001,other_pq,80m_to_300m,154kV 금산-무주T/L 선종교체공사 종단설계 기술검토 용역(PQ)
+E012607360,development,G002,supervision,300m_to_1b,동서울-신용인 전력구 및 C/T 부지 확장공사 감독권한대행 등 건설사업관리용역
+E012607366,development,G002,supervision,1b_to_5b,수도권 3기 신도시 전기공급시설 전력구공사(남양주-왕숙-진접) 감독권한대행 등 건설사업관리용역
+E012607414,test,G006,supervision,under_80m,남광명분기 전력구 소방설비공사 감리용역
+E012607542,development,G001,supervision_pq,80m_to_300m,154kV 포두S/S ICT분야 건설사업 책임감리용역(PQ)
+E012607829,test,G023,other,1b_to_5b,154kV 신정읍-소성T/L 인출변경 건설공사
+E012607831,development,G001,other_pq,80m_to_300m,345kV 서남권 해상풍력 공동접속설비 건설사업 소규모재해영향평가 용역PQ
+E012607842,development,G024,transmission,1b_to_5b,'27년 경남본부 지중송전협력회사 공사
+E012607869,development,G001,supervision_pq,1b_to_5b,"154kV 남고창S/S 토건공사 감독권한대행 등 건설사업관리용역(PQ,SOQ)"
+E012607887,development,G002,substation,300m_to_1b,345kV 옥내변전소 표준모델 개발 변전 설계 용역
+E012607940,development,G024,transmission,1b_to_5b,'27년 제주본부 직할 지중송전협력회사 공사
+E012607946,test,G019,other,5b_plus,전남광주지역 전기공급시설 전력구공사(345kV 신광산S/S 분기 수직구#1)
+E012607958,development,G024,transmission,1b_to_5b,’27년 대구본부 직할 지중송전협력회사 공사
+E012607967,development,G024,transmission,1b_to_5b,'27년 대구본부 달성전력지사 지중송전협력회사 공사
+E012607998,development,G024,transmission,1b_to_5b,’27년 인천본부 김포전력지사 지중송전협력회사 공사
+E012608001,development,G024,transmission,1b_to_5b,'27년 광주전남본부 직할 지중송전협력회사 공사
+E012608003,development,G024,transmission,1b_to_5b,'27년 경북본부 직할 지중송전협력회사 공사
+E012608004,development,G024,transmission,1b_to_5b,'27년 순천전력지사 지중송전협력회사 공사
+E012608006,development,G024,transmission,1b_to_5b,'27년 서울본부 성동전력지사 지중송전협력회사 공사
+E012608007,development,G024,transmission,1b_to_5b,'27년 남서울본부 직할 지중송전협력회사 공사
+E012608008,development,G024,transmission,1b_to_5b,'27년 남서울본부 강남전력지사 지중송전협력회사 공사
+E012608012,development,G024,transmission,1b_to_5b,’27년 남서울본부 영등포전력지사 지중송전협력회사 공사
+E012608014,development,G024,transmission,1b_to_5b,'27년 남서울본부 동서울전력지사 지중송전협력회사 공사
+E012608018,development,G024,transmission,1b_to_5b,'27년 북부산전력지사 지중송전협력회사 공사
+E012608020,development,G024,transmission,1b_to_5b,’27년 인천본부 시흥전력지사 지중송전협력회사 공사
+E012608022,development,G024,transmission,1b_to_5b,’27년 경기북부본부 직할 지중송전협력회사 공사
+E012608025,development,G024,transmission,1b_to_5b,'27년 서울본부 중부전력지사 지중송전협력회사 공사
+E012608026,development,G024,transmission,1b_to_5b,'27년 부산울산본부 직할 지중송전협력회사 공사
+E012608028,development,G024,transmission,1b_to_5b,'27년 서부산전력지사 지중송전협력회사 공사
+E012608029,development,G024,transmission,1b_to_5b,’27년 경기본부 직할 지중송전 협력회사 공사
+E012608031,development,G024,transmission,1b_to_5b,’27년 경기북부본부 고양전력지사 지중송전협력회사 공사
+E012608033,validation,G025,other,1b_to_5b,130KV 신부평변환소 건물전기공사
+E012608035,development,G024,transmission,1b_to_5b,'27년 인천본부 직할 지중송전협력회사 공사
+E012608036,development,G024,transmission,1b_to_5b,’27년 경기본부 성남전력지사 지중송전 협력회사 공사
+E012608040,development,G024,transmission,1b_to_5b,’27년 충북본부 직할 지중송전협력회사 공사
+E012608041,development,G024,transmission,1b_to_5b,’27년 경기본부 군포전력지사 지중송전 협력회사 공사
+E012608043,development,G024,transmission,1b_to_5b,'27년 인천본부 부평전력지사 지중송전협력회사 공사
+E012608045,development,G024,transmission,1b_to_5b,’27년 경기본부 평택전력지사 지중송전 협력회사 공사
+E012608047,development,G001,supervision_pq,1b_to_5b,"154kV 북과천변전소 토건공사 감독권한대행 등 건설사업관리용역(토건운영부PQ,SOQ)"
+E012608048,validation,G026,other_pq,80m_to_300m,345kV 신광주-신임실 T/L 건설사업 소규모 재해영향평가용역PQ
+E012608050,development,G024,transmission,1b_to_5b,'27년 대전세종충남본부 직할 지중송전협력회사 공사
+E012608051,development,G024,transmission,1b_to_5b,'27년도 천안전력지사 지중송전협력회사 공사
+E012608052,development,G024,transmission,1b_to_5b,’27년 강원본부 직할 지중송전협력회사 공사
+E012608053,development,G027,other,300m_to_1b,문경S/S 모곡D/L 일반 1회선 신설공사
+E012608054,development,G028,supervision,80m_to_300m,문경S/S 모곡D/L 일반 1회선 신설공사 감리용역
+E012608055,test,G023,other,1b_to_5b,154kV 신정읍-소성T/L 인출변경 건설공사
+E012608058,development,G024,transmission,1b_to_5b,’27년 전북본부 직할 지중송전협력회사 공사
+E012608076,development,G001,supervision_pq,300m_to_1b,154kV 산이S/S ICT분야 건설사업 책임감리용역(PQ)
+E012608080,validation,G029,other,1b_to_5b,345kV 신정읍-신계룡T/L 건설공사 자재운반방법 선정용역
+E012608081,test,G030,other_pq,under_80m,345kV 신광산S/S 소방설비공사 실시설계용역(PQ)
+E012608122,development,G031,supervision_pq,80m_to_300m,진주 내동면 진주시청자원순환과 산업용(을)고압A 4900kW 신설 감리(PQ)
+E012608126,validation,G029,other,300m_to_1b,345kV 신계룡-신천안T/L 건설공사 자재운반방법 선정용역
+E012608128,validation,G032,supervision,300m_to_1b,345kV 신안성-동용인지중T/L 운영시스템 설치 등 2개 공사 통합 책임감리용역
+E012608131,development,G001,supervision_pq,300m_to_1b,154kV 서영광S/S ICT분야 건설사업 책임감리용역(PQ)
+E012608133,validation,G033,supervision,1b_to_5b,전남광주지역 전기공급시설 전력구공사(345kV 신광산S/S분기 용진터널구간) 감독권한대행 등 건설사업관리용역
+E012608135,development,G034,other,80m_to_300m,2026년 신양재S/S 362kV GIS 정밀점검공사(강남전력지사)
+E012608137,test,G030,other_pq,under_80m,345kV 신광산S/S 소방설비공사 실시설계용역(PQ)
+E012608138,development,G001,other_pq,80m_to_300m,345kV 신정읍-새만금#2T/L 건설사업 소규모 재해영향평가용역(PQ)
+E012608140,development,G035,supervision,under_80m,청송 거대 청송군수 농사용(을)저압 5kW 신설 감리용역
+E012608142,test,G036,other,under_80m,154kV 이원-도계 1파이분기T/L 건설공사 건설 폐기물처리 용역
+E012608143,development,G002,other,under_80m,345kV 신마산S/S 중량물 수송로 정밀안전점검 용역
+E012608144,validation,G037,other,80m_to_300m,매암동 한국플라스틱엔지니어링 30.5MW 신설 기초자료 조사용역
+E012608147,development,G028,supervision,under_80m,이수-과천 복합터널 건설 지장이설공사(지중) 감리(관악동작지사)
+E012608149,development,G031,supervision_pq,300m_to_1b,과천 주암지구 배전간선 설치공사 통합감리용역(배전총괄부-PQ)
+E012608150,development,G035,supervision,under_80m,남면 봉천리 김천시청 도로공사 지장이설 감리
+E012608152,development,G035,supervision,under_80m,국도28호선 강동 인동 교차로 개선공사 지장주 감리용역
+E012608154,development,G038,other,80m_to_300m,옥길동 한강유역환경청 지장전주 이설공사(광명)
+E012608155,development,G035,supervision,80m_to_300m,"역동 경안리버시티 주거용 5,750kW 신설공사 감리용역(광주)"
+E012608156,development,G035,supervision,under_80m,송절동 청주시 상수도사업소 지장전주 이설공사(2공구) 감리
+E012608157,development,G038,other,80m_to_300m,우정읍 빛그린에너지 외 재생e 사업자부담 계통보강 연계공사(서평택)
+E012608158,development,G028,supervision,80m_to_300m,우정읍 빛그린에너지 외 재생e 사업자부담 계통보강 연계공사 감리용역(서평택)
+E012608160,development,G035,supervision,under_80m,"사천면 ㈜파마리서치 산업용(을)고압A 4,000kW 신설공사 감리용역"
+E012608162,development,G027,other,300m_to_1b,2027년 강릉지사 3권역 비가로수 수목전지공사
+E012608163,development,G039,other,300m_to_1b,345kV 신성연S/S 154kV 전력케이블 설치공사
+E012608165,development,G038,other,80m_to_300m,2026년도 서울본부 직할 불량 맨홀뚜껑 보수공사
+E012608166,development,G035,supervision,under_80m,풍양 한동 고흥군수 도로확장 지전이설 감리
+E012608169,development,G028,supervision,under_80m,개진면 고령군청 치산소하천 지장전주 이설공사 감리
+E012608171,development,G027,other,300m_to_1b,2027년 강릉지사 1권역 비가로수 수목전지공사
+E012608172,development,G027,other,300m_to_1b,2027년 강릉지사 2권역 비가로수 수목전지공사
+E012608173,validation,G040,other,under_80m,동용인S/S 신설에 따른 5회선 선로확충공사 폐기물 처리용역
+E012608174,test,G023,other,300m_to_1b,345kV 신강진-광양 등 9개T/L 고정형 폴리머 점퍼지지애자 설치공사
+E012608175,development,G038,other,80m_to_300m,남원천 생태하천복원사업 (지)이설공사[1공구]
+E012608176,development,G038,other,80m_to_300m,"동대동 122-1 소로2-72, 70호선 도시계획도로 지장이설 공사 입찰시행"
+E012608177,development,G035,supervision,under_80m,"동대동 122-1 소로2-72, 70호선 도시계획도로 개설 지장전주 감리용역 입찰"
+E012608178,development,G035,supervision,under_80m,남원천 생태하천복원사업 (지)이설공사[1공구] 감리용역
+E012608179,development,G041,other,80m_to_300m,154kV 동평택S/S #4M.Tr 설치공사
+E012608180,development,G027,other,300m_to_1b,S-1생활권 임난수로 우회도로 지장이설공사
+E012608181,development,G035,supervision,under_80m,화촌 한수원 양수발전소 상부댐 진입도로개설 지장주 감리용역
+E012608185,development,G027,supervision,80m_to_300m,S-1생활권 임난수로 우회도로 지장이설공사 감리용역
+E012608186,validation,G042,distribution,under_80m,남양주 왕숙1지구 5공구 배전간선 설치공사 실시설계용역
+E012608187,development,G002,other,under_80m,345kV 남울산S/S 조경공사 안전관리용역
+E012608189,validation,G043,other,under_80m,2027년 인재개발원 전세버스 임차 용역 연간 단가계약
+E012608193,validation,G044,supervision,80m_to_300m,154kV 동세종S/S ICT분야 건설사업 책임감리용역
+E012608195,development,G028,supervision,under_80m,관산 옥당 장흥군청 지방하천 정비 지장이설 공사 감리용역
+E012608197,development,G045,other,300m_to_1b,충장S/S 23kV 전력케이블 포설 및 Cable Plug-In 접속공사
+E012608198,development,G046,diagnosis,under_80m,과천 주암지구 배전간선 설치공사 VLF진단용역(배전총괄부)
+E012608199,development,G027,distribution,1b_to_5b,과천 주암지구 배전간선 설치공사(전기)
+E012608201,test,G047,other,300m_to_1b,2027년도 동대구지사 상반기 동구지역 수목전지공사
+E012608202,development,G048,other,80m_to_300m,고덕2-서안성(4공구) 전력구 재난안전통신망 시설공사
+E012608203,development,G027,other,300m_to_1b,"역동 경안리버시티 주거용 5,750kW 신설공사(광주)"
+E012608204,test,G047,other,300m_to_1b,2027년도 동대구지사 상반기 수성구지역 수목전지공사
+E012608205,test,G047,other,80m_to_300m,2027년도 동대구지사 상반기 가창면지역 수목전지공사
+E012608206,validation,G049,other,under_80m,154kV 백학S/S #3M.Tr 및 B/S 증설공사(전력케이블)
+E012608207,test,G050,other,80m_to_300m,용현-학익1블록 전력통신용 광케이블 시설공사
+E012608208,test,G050,other,80m_to_300m,상일IC 등 3개 전력구 운영시스템 설치공사(동서울 전력지사)
+E012608209,development,G004,supervision_pq,80m_to_300m,국지도58호선 가덕대교-송정IC 고가도로 건설 지장 이설공사 감리용역(PQ)
+E012608212,development,G001,other_pq,300m_to_1b,345kV 신안#1 해상풍력 공동접속설비 건설사업 자재운반방법 선정용역(PQ)
+E012608213,development,G028,supervision,80m_to_300m,가파도 RE100 태양광 발전시스템 구축사업 공사 감리 용역
+E012608217,development,G035,supervision,under_80m,화양면 완포리 한국농어촌공사 금강사업단 공사 감리 입찰
+E012608218,development,G051,other,80m_to_300m,임동 챔피언스시티 기반시설 저압 40건 신설 위치탐사용역
+E012608219,development,G052,other,80m_to_300m,345kV 선산S/S ESS 건설공사(전력케이블 설치)
+E012608220,development,G038,other,80m_to_300m,공군 제 19전투비행단 지능형 전력망 고도화 사업
+E012608222,validation,G053,other,80m_to_300m,평창 진부고교 일원 지중화공사 위치탐사 및 도통시험 동시공법
+E012608224,development,G028,supervision,80m_to_300m,S-1생활권 임난수로 우회도로 지장이설공사 감리용역
+E012608225,development,G035,supervision,under_80m,지산동 구미시청(농촌활력과) 지산 도시계획도로 지장이설 감리용역
+E012608226,development,G054,other,300m_to_1b,154kV 북평택S/S M.Tr 설치공사
+E012608227,development,G028,supervision,under_80m,북구 천곡 산144-1 등 천곡지구 도시개발사업 지장주 이설공사 감리
+E012608231,validation,G055,diagnosis,under_80m,"2026년 강원본부 직할 콘크리트전주 2,3순위 내부진단용역"
+E012608233,development,G035,supervision,under_80m,"김포 고촌읍 신곡리 한시폴 배수장 5,000kW 주,예비 통합감리용역"
+E012608234,development,G035,supervision,under_80m,연수 금곡마을~용탄 외촌마을 도로개설 지장전주 이설공사 감리
+E012608235,development,G035,supervision,under_80m,`26년 노후 가공변압기 교체 공사 감리

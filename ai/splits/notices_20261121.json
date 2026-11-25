@@ -1,0 +1,92 @@
+{
+  "seed": 20261123,
+  "input_sha256": {
+    "bid_attachment.csv": "3c0efae18855dbd5a375aae59025a76e7ae5b3ad291f10612ca62c8c50070bdf",
+    "bid_document_content.csv": "7cd691495b26c14c9335f0ec0dc7cba2434688023893a2312e4dfe1a59d6fbb3",
+    "bid_notice.csv": "ac68be13a2cbb271b5c3af3554bb764dc4013809b4b702e36c34e001c9c837b9"
+  },
+  "notices": 163,
+  "template_groups": 55,
+  "inspected_notices_pinned_to_development": [
+    "E012607014",
+    "E012607127",
+    "E012608047",
+    "E012608054",
+    "E012608122",
+    "E012608149",
+    "E012608198",
+    "E012608199",
+    "E012608220",
+    "E012608224"
+  ],
+  "large_template_groups_pinned_to_development": 10,
+  "largest_groups": [
+    31,
+    16,
+    15,
+    10,
+    8,
+    8,
+    6,
+    5,
+    4,
+    3
+  ],
+  "split_counts": {
+    "development": 114,
+    "test": 25,
+    "validation": 24
+  },
+  "category_counts": {
+    "development": {
+      "other": 28,
+      "supervision": 27,
+      "supervision_pq": 14,
+      "other_pq": 11,
+      "transmission": 31,
+      "diagnosis": 1,
+      "distribution": 1,
+      "substation": 1
+    },
+    "validation": {
+      "diagnosis": 1,
+      "supervision_pq": 4,
+      "other": 9,
+      "distribution": 1,
+      "other_pq": 3,
+      "supervision": 4,
+      "substation_pq": 1,
+      "substation": 1
+    },
+    "test": {
+      "supervision_pq": 4,
+      "other_pq": 3,
+      "other": 11,
+      "supervision": 2,
+      "substation": 5
+    }
+  },
+  "price_band_counts": {
+    "development": {
+      "80m_to_300m": 26,
+      "under_80m": 21,
+      "300m_to_1b": 20,
+      "1b_to_5b": 43,
+      "5b_plus": 4
+    },
+    "validation": {
+      "under_80m": 5,
+      "300m_to_1b": 8,
+      "80m_to_300m": 6,
+      "1b_to_5b": 4,
+      "5b_plus": 1
+    },
+    "test": {
+      "80m_to_300m": 6,
+      "300m_to_1b": 11,
+      "1b_to_5b": 2,
+      "under_80m": 4,
+      "5b_plus": 2
+    }
+  }
+}

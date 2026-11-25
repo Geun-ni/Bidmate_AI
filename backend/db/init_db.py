@@ -77,6 +77,9 @@ COLUMN_MIGRATIONS = [
     ("srm_region_district_master", "gu_name", "TEXT"),
     # 2026-11-22 평가산식 규칙 추출 성공 여부 (0 이면 LLM 이 본문을 직접 읽음)
     ("bid_document_content", "rule_extracted", "INTEGER CHECK (rule_extracted IN (0, 1))"),
+    ("required_document_item", "source_quote", "TEXT"),
+    ("required_document_item", "source_sha256", "TEXT"),
+    ("required_document_item", "updated_by", "TEXT CHECK (updated_by IN ('PARSER', 'LLM', 'USER'))"),
 ]
 
 # 시군구 이름을 시/군/구 칸으로 나눈다. region_name 은 'X시', 'X군', 'X구', 'X시 Y구' 네 꼴뿐 (253건 확인)
