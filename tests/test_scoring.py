@@ -519,3 +519,17 @@ class RuleReinforce1125Test(unittest.TestCase):
     def test_additive_bonus(self):
         items = [x for x in self.r["E012608295"]["rows"] if x["rule_type"] == "TABLE" and x["category"] == "BONUS"]
         self.assertEqual([x["parameters"]["rows"][0]["score"] for x in items], [2.5, 0.5])
+
+
+class OfficeConditionTest(unittest.TestCase):
+    """숙지도(표 없음): 조건은 본문 평가기준에서, 배점과 다른 점수가 있으면 못 읽음(None)"""
+
+    def test_condition_from_body(self):
+        from backend.db.extract_evaluation_rules import office_condition
+        body = ["○ 평가기준 : 입찰공고 전일기준 해당 공사현장이 속한 광역시, 특별시, 특별자치도 또는 도에 "
+                "법인등기부상 본점소재지(개인사업자인 경우 … 말함)를 두고 있어 … 적용한다.",
+                "- 단, 공동계약의 경우 … 시공비율에 배점(4점)을 곱하여 산정한다."]
+        self.assertEqual(office_condition(body, 4.0), "입찰공고 전일기준 해당 공사현장이 속한 광역시, 특별시, "
+                                                      "특별자치도 또는 도에 법인등기부상 본점소재지")
+        self.assertIsNone(office_condition(body + ["- 인접 시·군이면 2점"], 4.0))
+        self.assertIsNone(office_condition(["본점이 있으면 배점한다."], 4.0))

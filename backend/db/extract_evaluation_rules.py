@@ -979,9 +979,12 @@ def other_experience_items(sec, found):
         elif "양성" in name and "보유" in name and (wf := workforce_rule(item_body(sec, k))):
             out.append({**base, "rule_type": "FORMULA", "input_key": "workforce_grade",
                         "formula": wf.pop("formula"), "params": wf})
-        elif "숙지도" in name:  # 표 없이 '광역시·도에 본점이 있으면 배점'
+        elif "숙지도" in name:  # 표 없이 '광역시·도에 본점이 있으면 배점' (사업소별 표가 있으면 office_table 이 대신함)
+            cond = office_condition(item_body(sec, k), cap)
             out.append({**base, "rule_type": "FIXED", "input_key": "office_location", "category": "OFFICE",
-                        "params": {"score": cap, "condition": "공사현장이 속한 광역시·특별시·특별자치도·도에 본점 소재"}})
+                        "params": {"score": cap, "condition": cond}} if cond else
+                       {**base, "rule_type": "GROUP", "category": "OFFICE", "review": True,
+                        "params": {"설명": sec[k + 1].strip()[:200] if k + 1 < len(sec) else None}})
         else:
             out.append({**base, "rule_type": "GROUP", "params": {"설명": sec[k + 1].strip()[:200] if k + 1 < len(sec)
                                                                   else None}, "review": True})
@@ -997,6 +1000,16 @@ def item_body(sec, k):
             break
         body.append(line)
     return body
+
+
+def office_condition(body, cap):
+    """숙지도 본문 '○ 평가기준 : … 광역시 … 또는 도에 법인등기부상 본점소재지(…)를 두고 있어 …' → 조건 문구.
+    해당이면 배점 전부(cap)를 주는 방식만 받는다: 평가기준이 없거나 본문에 배점과 다른 점수가 있으면 None"""
+    text = " ".join(body)
+    m = re.search(r"평가\s*기준\s*[:：]?\s*(.+?본점\s*소재지)", re.sub(r"\([^()]*\)", "", text))
+    if not m or any(abs(float(v) - cap) > 1e-9 for v in re.findall(r"(\d+(?:\.\d+)?)\s*점", text)):
+        return None
+    return re.sub(r"\s+", " ", m.group(1)).strip()[:200]
 
 
 def workforce_rule(body):
