@@ -5,7 +5,8 @@
  * 행안부 팝업은 결과를 서버로 POST 해서 돌려주는 방식이라 정적 화면만으로는 받을 수 없어,
  * 같은 이름 체계(시도 정식 명칭 + 시군구)를 주는 다음 우편번호 결과를 그 모양으로 바꿔 보낸다.
  */
-const SCRIPT = "https://t1.daumcdn.net/mapjsapi/bundle/postcode/prod/postcode.v2.js";
+// t1.daumcdn.net 도메인 종료 안내에 따라 t1.kakaocdn.net 으로 옮김
+const SCRIPT = "https://t1.kakaocdn.net/mapjsapi/bundle/postcode/prod/postcode.v2.js";
 
 // 다음 우편번호는 시도를 '서울', '경기'처럼 줄여서 줄 때가 있어 정식 명칭으로 맞춘다
 const SIDO_FULL = {

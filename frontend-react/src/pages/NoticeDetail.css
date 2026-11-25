@@ -16,7 +16,7 @@
 .dh-facts .span-all { grid-column: 1 / -1; }
 .dh-facts .span-all dd { font-weight: 500; line-height: 1.55; }
 
-.stepper { display: grid; grid-template-columns: repeat(5, 1fr); counter-reset: step; }
+.stepper { display: grid; grid-template-columns: repeat(3, 1fr); counter-reset: step; }
 .stepper li { position: relative; display: grid; justify-items: center; gap: 4px; text-align: center; font-size: .8rem; color: var(--text-3); }
 .stepper li::before { content: ""; position: absolute; top: 13px; left: -50%; right: 50%; height: 2px; background: var(--border); z-index: 0; }
 .stepper li:first-child::before { display: none; }
@@ -59,3 +59,14 @@
   .stepper { font-size: .72rem; }
   .step-label { font-size: .7rem; }
 }
+
+/* 단계별 날짜와 남은 시간 */
+.step-date { font-size: .78rem; color: var(--text-2); font-weight: 600; }
+.step-left { font-size: .74rem; color: var(--text-3); font-weight: 600; min-height: 1.2em; }
+.step-left.now { color: var(--accent); }
+.stepper li.done .step-left { color: var(--text-3); }
+
+/* 적격심사 서류 제출기한 안내 */
+.dh-facts .doc-due dd { display: grid; gap: 4px; font-weight: 500; font-size: .86rem; line-height: 1.6; }
+.dh-facts .doc-due dd p { margin: 0; }
+.dh-facts .doc-due .source { margin-top: 2px; }

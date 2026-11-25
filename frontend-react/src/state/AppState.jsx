@@ -8,11 +8,13 @@ import { load, save } from "../lib/storage.js";
 const AppState = createContext(null);
 
 /**
- * 테스트 모드 (개발 서버에서만): 서버 계정 없이 '테스트 사용자'로 로그인한 것처럼 쓴다.
+ * 테스트 모드 (개발 서버 + VITE_TEST_LOGIN=1 일 때만): 서버 계정 없이 '테스트 사용자'로 로그인한 것처럼 쓴다.
  * 업체정보·관심공고·점수 입력값은 서버가 아니라 이 브라우저에만 저장해, 팀 운영 DB에 테스트 데이터가 쌓이지 않게 한다.
  * 공고·배점·점수 계산은 실제 API를 그대로 쓴다.
  */
-const TEST_ENABLED = import.meta.env.DEV;
+// 기본은 꺼짐(일반 로그인만). 켜려면 frontend-react/.env.local 에 VITE_TEST_LOGIN=1 을 적고 개발 서버를 다시 켠다.
+// 배포 빌드에서는 설정과 상관없이 항상 꺼진다. 꺼져 있으면 예전에 저장된 테스트 상태도 무시한다.
+const TEST_ENABLED = import.meta.env.DEV && import.meta.env.VITE_TEST_LOGIN === "1";
 const TEST_USER = { user_id: "test-user", email: "test@localhost", display_name: "테스트 사용자", is_admin: false, test: true };
 export const DEFAULT_TEST_COMPANY = {
   id: "test-company",

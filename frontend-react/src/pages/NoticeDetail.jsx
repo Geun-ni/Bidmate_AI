@@ -6,7 +6,7 @@ import ScoreTab from "../components/detail/ScoreTab.jsx";
 import DocsTab from "../components/detail/DocsTab.jsx";
 import { Dday, EmptyState, JudgmentBadge, Money, NoticeBox, NoticeStatusBadge, Star, Term, isInactive } from "../components/ui.jsx";
 import { downloadIcs, googleCalendarUrl } from "../lib/calendar.js";
-import { fullDateTime } from "../lib/format.js";
+import { fullDateTime, shortDateTime, timeLeft } from "../lib/format.js";
 import { STEPS, currentStep, nextDeadline } from "../lib/notice.js";
 import { useAppState } from "../state/AppState.jsx";
 import { useQna } from "../components/QnaPanel.jsx";
@@ -38,6 +38,12 @@ export default function NoticeDetail() {
   }, [id, loading, listed, single.id]);
   // 적격심사 서류 제출기한: 날짜가 없고 기준서 원문 문구만 있다
   const [docDue, setDocDue] = useState(null);
+  // 남은 시간 표시를 1분마다 새로 계산
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const t = setInterval(() => setNow(new Date()), 60000);
+    return () => clearInterval(t);
+  }, []);
   useEffect(() => {
     let alive = true;
     setDocDue(null);
@@ -69,7 +75,9 @@ export default function NoticeDetail() {
   }
 
   const inactive = isInactive(notice);
-  const step = currentStep(notice);
+  const step = currentStep(notice, now);
+  // 기준서 문구에서 '통보일로부터 N일 이상'의 N
+  const dueDays = docDue?.note?.match(/(\d+)\s*일\s*이상/)?.[1] ?? docDue?.note?.match(/(\d+)\s*일/)?.[1] ?? null;
   const deadline = nextDeadline(notice);
   const gcal = googleCalendarUrl(notice);
   const selectTab = (next) => setParams(next === "summary" ? {} : { tab: next }, { replace: true });
@@ -120,10 +128,17 @@ export default function NoticeDetail() {
             </div>
           )}
           {docDue && (
-            <div className="span-all">
-              <dt>적격심사 서류 기한 <span className="badge badge-warn" style={{ marginLeft: 4 }}>통보 후 지정</span></dt>
-              <dd className="small">
-                대상자 통보를 받은 뒤 정해집니다. 기준서 원문: &ldquo;{docDue.note}&rdquo;
+            <div className="span-all doc-due">
+              <dt>적격심사 서류 제출기한 <span className="badge badge-warn" style={{ marginLeft: 4 }}>통보 후 지정</span></dt>
+              <dd>
+                <p>미리 정해진 날짜가 없습니다. 개찰 후 <strong>적격심사 대상자로 통보</strong>를 받으면 그때 기한이 정해집니다.</p>
+                {dueDays && (
+                  <p>기준서상 통보일로부터 <strong>{dueDays}일 이상</strong>의 기한이 주어집니다. 정확한 마감일은 통보서에서 확인하세요.</p>
+                )}
+                <details className="source">
+                  <summary>기준서 원문 보기</summary>
+                  <blockquote>{docDue.note}</blockquote>
+                </details>
               </dd>
             </div>
           )}
@@ -131,12 +146,18 @@ export default function NoticeDetail() {
 
         {step >= 0 && (
           <ol className="stepper" aria-label="입찰 진행 단계">
-            {STEPS.map((s, i) => (
-              <li key={s} className={i < step ? "done" : i === step ? "current" : ""} aria-current={i === step ? "step" : undefined}>
-                <span className="step-dot num">{i < step ? "✓" : i + 1}</span>
-                <span className="step-label"><Term>{s}</Term></span>
-              </li>
-            ))}
+            {STEPS.map((s, i) => {
+              const iso = notice.schedule[s.key];
+              const left = timeLeft(iso, now);
+              return (
+                <li key={s.key} className={i < step ? "done" : i === step ? "current" : ""} aria-current={i === step ? "step" : undefined}>
+                  <span className="step-dot num">{i < step ? "✓" : i + 1}</span>
+                  <span className="step-label"><Term term={s.term}>{s.label}</Term></span>
+                  <span className="step-date num">{iso ? shortDateTime(iso) : "미정"}</span>
+                  <span className={`step-left num${left && i === step ? " now" : ""}`}>{iso ? (left ?? (s.key === "opening" ? "개찰됨" : "마감됨")) : ""}</span>
+                </li>
+              );
+            })}
           </ol>
         )}
 

@@ -1,2 +1,6 @@
 node_modules/
 dist/
+
+# 개인 개발 설정 (예: VITE_TEST_LOGIN=1, BIDMATE_API=...)
+.env.local
+.env.*.local

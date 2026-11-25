@@ -43,3 +43,16 @@
 .agenda-pager .btn { min-width: 30px; padding: 0 8px; font-size: 1rem; }
 .agenda-pager .btn:disabled { opacity: .35; cursor: default; }
 .agenda-pager > span:last-child { margin-left: auto; }
+
+/* 직접 추가한 일정 */
+.tone-custom { background: var(--ok); }
+.cal-add { margin-top: 10px; width: 100%; }
+.cal-form { display: grid; gap: 6px; margin-top: 10px; padding: 10px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-2); }
+.cal-form .input { height: 36px; font-size: .86rem; }
+.cal-form-row { display: grid; grid-template-columns: 1fr 110px; gap: 6px; }
+.cal-form-actions { display: flex; align-items: center; gap: 6px; }
+.cal-form-actions .xsmall { margin-right: auto; }
+.agenda-custom { position: relative; }
+.agenda-custom .agenda-item { padding-right: 30px; }
+.agenda-remove { position: absolute; right: 4px; top: 8px; width: 24px; height: 24px; border: 0; border-radius: 50%; background: transparent; color: var(--text-3); cursor: pointer; font-size: .75rem; }
+.agenda-remove:hover { background: var(--soft); color: var(--text); }
