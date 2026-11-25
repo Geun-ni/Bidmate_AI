@@ -155,3 +155,4 @@ mark.hl { background: color-mix(in srgb, var(--accent) 28%, transparent); color:
   .fp-row { grid-template-columns: minmax(0, 1fr); gap: 4px; }
   .filter-toggle { order: 3; }
 }
+.fp-area { width: 150px; }

@@ -34,6 +34,7 @@ const DEFAULT_FILTERS = {
   showInactive: false,
   showMismatch: false,
   region: "ALL", // ALL | MINE(우리 지역 한정 공고) | NATIONWIDE(지역 제한 없음)
+  area: "", // 보고 싶은 시·도 (SRM 광역 코드, NONE=미분류). 비어 있으면 전체
   myLicense: false, // 우리 면허가 요구 조건에 들어간 공고만
   noRestriction: false, // 면허·자격·지역·주력분야 제한이 하나도 없는 공고만
   priceMin: null, // 추정가격 (원)
@@ -60,12 +61,23 @@ function activeChips(f) {
   if (f.showMismatch) chips.push({ key: "showMismatch", label: "조건불일치 포함", reset: { showMismatch: false } });
   if (f.region === "MINE") chips.push({ key: "region", label: "우리 지역 한정 공고", reset: { region: "ALL" } });
   if (f.region === "NATIONWIDE") chips.push({ key: "region", label: "지역 제한 없음(전국)", reset: { region: "ALL" } });
+  if (f.area) chips.push({ key: "area", label: `지역 ${AREA_LABEL[f.area]}`, reset: { area: "" } });
   if (f.myLicense) chips.push({ key: "myLicense", label: "우리 면허 요구 공고", reset: { myLicense: false } });
   if (f.noRestriction) chips.push({ key: "noRestriction", label: "제한 조건 없는 공고", reset: { noRestriction: false } });
   if (f.priceMin != null || f.priceMax != null)
     chips.push({ key: "price", label: `금액 ${priceLabel(f.priceMin, f.priceMax)}`, reset: { priceMin: null, priceMax: null } });
   return chips;
 }
+
+/** 공고 지역 고르기: SRM 광역 코드 묶음 (지역 제한 광역 또는 발주 본부로 정한 notice.areas 와 비교) */
+/** 공고 지역 고르기 (시·도): SRM 광역 코드. 공고의 notice.areas(지역 제한 광역 또는 발주 본부로 정한 광역)와 비교 */
+const AREA_OPTIONS = [
+  ["S", "서울"], ["H", "인천"], ["G", "경기"], ["F", "강원"], ["C", "충북"], ["D", "대전"], ["L", "세종"], ["R", "충남"],
+  ["J", "전북"], ["I", "광주·전남"], ["T", "대구"], ["K", "경북"], ["B", "부산"], ["Z", "울산"], ["M", "경남"], ["E", "제주"],
+  ["NONE", "지역 미분류"],
+];
+const AREA_LABEL = Object.fromEntries(AREA_OPTIONS);
+const inArea = (n, code) => (code === "NONE" ? !n.areas?.length : n.areas?.includes(code));
 
 const isRestrictionFree = (n) => ["license", "qualification", "region", "licenseMain"].every((k) => n.conditions[k]?.status === "제한 없음");
 
@@ -74,7 +86,11 @@ export default function Dashboard() {
   // 업체 기준 판정 전에는 목록을 보여 주지 않는다 (판정 없는 목록이 추천처럼 보이지 않게)
   const loading = noticesLoading || user === undefined || companyLoading;
   const notices = allNotices;
-  const [filters, setFilters] = useState(() => ({ ...DEFAULT_FILTERS, ...load("filters", {}) }));
+  const [filters, setFilters] = useState(() => {
+    const saved = { ...DEFAULT_FILTERS, ...load("filters", {}) };
+    delete saved.areas; // 예전 형식(여러 개 고르기) 정리
+    return { ...saved, area: AREA_LABEL[saved.area] ? saved.area : "" };
+  });
   const sentinelRef = useRef(null);
   const sideRef = useRef(null);
   const stickyRef = useRef(null);
@@ -163,6 +179,8 @@ export default function Dashboard() {
     const t = setTimeout(() => setParams(next ? { q: next } : {}, { replace: true }), 300);
     return () => clearTimeout(t);
   }, [text, q, setParams]);
+  const noticesRef = useRef(notices);
+  noticesRef.current = notices;
   useEffect(() => {
     if (!q) {
       setSearch({ q: "", ids: null, closed: [], loading: false, error: null });
@@ -175,6 +193,9 @@ export default function Dashboard() {
       .then((r) => {
         if (!alive) return;
         const ids = new Set(r.notices.map((n) => n.notice_no));
+        // 서버 검색은 공고명·공고번호만 본다 → 지금 목록(진행 중·관심공고)은 발주부서로도 찾는다
+        const key = q.toLowerCase();
+        noticesRef.current.forEach((n) => n.placeName?.toLowerCase().includes(key) && ids.add(n.id));
         // 지금 목록(진행 중)에 없는 결과 = 참가신청이 끝난 공고 → 가벼운 목록으로 (판정 없이). 걸러내기는 closedExtra에서
         setSearch({ q, ids, closed: filters.showInactive ? r.notices : [], loading: false, error: null });
       })
@@ -182,7 +203,8 @@ export default function Dashboard() {
     return () => {
       alive = false;
     };
-  }, [q, filters.showInactive]);
+    // 공고 목록을 다 받은 뒤 한 번 더 (발주부서 검색은 목록이 있어야 해서)
+  }, [q, filters.showInactive, noticesLoading]);
   const searching = Boolean(q);
 
   const update = (patch) =>
@@ -205,6 +227,7 @@ export default function Dashboard() {
       const region = n.conditions.region;
       if (filters.region === "NATIONWIDE" && region?.status !== "제한 없음") return true;
       if (filters.region === "MINE" && !(region?.status === "수집됨" && n.judgment.items.find((i) => i.key === "region")?.status === "MATCH")) return true;
+      if (filters.area && !inArea(n, filters.area)) return true;
       if (filters.myLicense && !(n.conditions.license?.status === "수집됨" && n.conditions.license.items.some((i) => held.has(i.code)))) return true;
       if (filters.noRestriction && !isRestrictionFree(n)) return true;
       const price = n.estimatedPrice;
@@ -224,7 +247,6 @@ export default function Dashboard() {
     () => (searching && search.ids ? notices.filter((n) => search.ids.has(n.id)) : searching ? [] : notices),
     [notices, searching, search.ids],
   );
-  const hiddenByFilter = searching ? matched.filter(filterOut).length : 0;
   const closedExtra = useMemo(() => {
     const known = new Set(notices.map((n) => n.id));
     return search.closed.filter((r) => !known.has(r.notice_no));
@@ -361,7 +383,7 @@ export default function Dashboard() {
                 if (e.key === "Enter") setParams(text.trim() ? { q: text.trim() } : {}, { replace: true });
                 if (e.key === "Escape") setText("");
               }}
-              placeholder="공고명 또는 공고번호로 검색 (예: 배전, 감리, E012608055)"
+              placeholder="공고명·공고번호·발주부서로 검색 (예: 배전, E012608055, 경기본부)"
               aria-label="공고 검색"
             />
             {searching && (
@@ -420,12 +442,11 @@ export default function Dashboard() {
                 title={`‘${q}’ 검색 결과가 없습니다`}
                 action={
                   <div className="form-actions" style={{ justifyContent: "center" }}>
-                    {hiddenByFilter > 0 && <button type="button" className="btn btn-primary" onClick={() => update(DEFAULT_FILTERS)}>필터 풀고 {hiddenByFilter}건 보기</button>}
                     {!filters.showInactive && <button type="button" className="btn" onClick={() => update({ showInactive: true })}>마감 공고까지 찾기</button>}
                   </div>
                 }
               >
-                {hiddenByFilter > 0 ? `검색어에 맞는 공고 ${hiddenByFilter}건이 지금 필터(조건불일치·관심공고 등) 때문에 숨겨져 있습니다.` : "공고명이나 공고번호의 일부로 다시 검색해 보세요."}
+                공고명이나 공고번호의 일부로 다시 검색해 보세요.
               </EmptyState>
             ) : notices.length === 0 ? (
               <EmptyState title="지금은 조건에 맞는 공고가 없습니다" action={<Link to="/company" className="btn">업체정보 확인하기</Link>}>
@@ -437,12 +458,6 @@ export default function Dashboard() {
           </div>
         ) : (
           <>
-            {searching && hiddenByFilter > 0 && (
-              <p className="small muted">
-                ‘{q}’ 검색 결과 중 {hiddenByFilter}건은 지금 필터 때문에 숨겨져 있습니다.{" "}
-                <button type="button" className="btn btn-ghost btn-sm" onClick={() => update(DEFAULT_FILTERS)}>필터 풀기</button>
-              </p>
-            )}
             {visible.length > 0 && <div data-reveal><Disclaimer /></div>}
             <ul className="notice-list">
               {visible.map((n, i) => (
@@ -516,11 +531,21 @@ function FilterPanel({ filters, update, onClose }) {
           <div className="seg-light" role="group" aria-label="지역 제한">
             {[
               ["ALL", "전체"],
-              ["MINE", "우리 지역 한정 공고"],
+              ["MINE", "우리 지역 한정"],
               ["NATIONWIDE", "지역 제한 없음(전국)"],
             ].map(([value, label]) => (
               <button key={value} type="button" aria-pressed={filters.region === value} onClick={() => update({ region: value })}>{label}</button>
             ))}
+          </div>
+          <div className="fp-area" title="지역 제한이 있으면 그 지역, 없으면 발주 지역본부 기준(추정). 건설본부·본사 발주 등은 '지역 미분류'.">
+            <Select
+              size="sm"
+              ariaLabel="공고 지역 (시·도)"
+              value={filters.area}
+              onChange={(v) => update({ area: v })}
+              placeholder="시·도 전체"
+              options={[{ value: "", label: "시·도 전체" }, ...AREA_OPTIONS.map(([value, label]) => ({ value, label }))]}
+            />
           </div>
         </div>
       </div>
@@ -550,7 +575,7 @@ function FilterPanel({ filters, update, onClose }) {
         <button
           type="button"
           className="btn btn-ghost btn-sm"
-          onClick={() => update({ favoritesOnly: false, showInactive: false, showMismatch: false, region: "ALL", myLicense: false, noRestriction: false, priceMin: null, priceMax: null })}
+          onClick={() => update({ favoritesOnly: false, showInactive: false, showMismatch: false, region: "ALL", area: "", myLicense: false, noRestriction: false, priceMin: null, priceMax: null })}
         >
           상세 필터 초기화
         </button>

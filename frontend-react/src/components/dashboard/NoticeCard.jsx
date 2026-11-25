@@ -30,7 +30,7 @@ export default function NoticeCard({ notice, highlight }) {
       </h3>
       <p className="nc-meta small muted">
         <span className={`type-tag type-${notice.type}`} title={notice.typeEstimated ? "공고명으로 추정한 구분" : undefined}>{notice.type === "SERVICE" ? "용역" : "공사"}</span>
-        <span>{notice.issuer}</span>
+        <span><Highlight text={notice.issuer} query={highlight} /></span>
         <span aria-hidden="true">·</span>
         <span className="num"><Highlight text={notice.id} query={highlight} /></span>
         <span aria-hidden="true">·</span>

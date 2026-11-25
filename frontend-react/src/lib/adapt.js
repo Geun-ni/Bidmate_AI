@@ -50,6 +50,33 @@ function noticeType(row, d) {
   return { type: SERVICE_WORDS.test(row.title ?? "") ? "SERVICE" : "CONSTRUCTION", typeEstimated: true };
 }
 
+/* ───────── 공고 지역 (광역) ─────────
+ * API에 공사 현장 위치가 없어 이렇게 정한다.
+ * 1) 지역 제한이 있으면 그 광역 (정확)  2) 없으면 발주 지역본부 이름으로 추정 (예: 경기본부 → 경기)
+ * 건설본부·상생조달처처럼 여러 지역을 맡는 부서나 발주부서가 비어 있으면 '미분류'.
+ */
+const HQ_AREAS = [
+  [/^남서울본부|^서울본부/, ["S"]],
+  [/^인천본부/, ["H"]],
+  [/^경기북부본부|^경기본부/, ["G"]],
+  [/^강원본부/, ["F"]],
+  [/^충북본부/, ["C"]],
+  [/^대전세종충남본부/, ["D", "L", "R"]],
+  [/^전북본부/, ["J"]],
+  [/^광주전남본부/, ["I"]],
+  [/^대구본부/, ["T"]],
+  [/^경북본부/, ["K"]],
+  [/^부산울산본부/, ["B", "Z"]],
+  [/^경남본부/, ["M"]],
+  [/^제주본부/, ["E"]],
+];
+
+function noticeAreas(region, placeName) {
+  if (region?.status === "수집됨" && region.items.length) return { areas: [...new Set(region.items.map((i) => i.area_code))], areaSource: "지역 제한" };
+  const hit = placeName ? HQ_AREAS.find(([re]) => re.test(placeName)) : null;
+  return hit ? { areas: hit[1], areaSource: "발주 본부" } : { areas: [], areaSource: null };
+}
+
 /**
  * row: 목록 행(/api/notices) 또는 상세, detail: 상세(/api/notices/<번호>). 상세를 못 받았으면 null.
  */
@@ -74,6 +101,8 @@ export function toNotice(row, detail, now = new Date()) {
     title: row.title,
     issuer: d.place_name ? `한국전력공사 ${d.place_name}` : "한국전력공사",
     ...kind,
+    ...noticeAreas(d.region, d.place_name),
+    placeName: d.place_name ?? null,
     category: `${NOTICE_TYPE[kind.type]} · 적격심사`,
     status: closed ? "CLOSED" : corrected ? "CORRECTED" : "OPEN",
     // 참가신청 기간이 아직 시작되지 않음 (SRM '참가신청전'). 저장된 progress_state는 수집 시점 값이라 날짜로 판단한다
