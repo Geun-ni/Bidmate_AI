@@ -435,3 +435,30 @@ class AttachmentFileTest(unittest.TestCase):
                 self.assertIsNone(notices_api.attachment_file(db, i, root=tmp))
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
+
+
+class LlmEvaluationTargetTest(unittest.TestCase):
+    """수집 끝 LLM 산식 보완 대상(실행당 1건): 규칙 추출 실패 공고를 고르고, LLM 결과가 생기면 다음 공고로 넘어간다"""
+
+    def test_target(self):
+        import shutil, sqlite3, tempfile
+        from pathlib import Path
+        from ai.llm_evaluation import needs_evaluation_fallback
+        from backend.collector.collect import llm_evaluation_target
+        tmp = tempfile.mkdtemp()
+        try:
+            path = Path(tmp) / "t.sqlite3"
+            shutil.copy(DEFAULT_DB_PATH, path)
+            db = sqlite3.connect(path)
+            first = llm_evaluation_target(db)
+            self.assertIsNotNone(first)
+            self.assertTrue(needs_evaluation_fallback(db, first))
+            db.execute("UPDATE evaluation_rule SET updated_by='LLM' WHERE notice_no=?", (first,))
+            if not db.execute("SELECT 1 FROM evaluation_rule WHERE notice_no=?", (first,)).fetchone():
+                db.execute("INSERT INTO evaluation_rule (notice_no, position, category, item_name, rule_type, "
+                           "verification_status, updated_by, extracted_at, updated_at) "
+                           "VALUES (?, 1, 'PASS', 't', 'PASS_SCORE', 'REVIEW', 'LLM', '', '')", (first,))
+            self.assertNotEqual(llm_evaluation_target(db), first)
+            db.close()
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)

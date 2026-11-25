@@ -482,6 +482,21 @@ def fetch_list(api_key, begin, end):
     return rows, failed
 
 
+def llm_evaluation_target(db):
+    """LLM 으로 산식을 보완할 공고 1건: 접수 중 + 기준서 규칙 추출 실패 + 아직 LLM 결과 없음 → 신청 마감이 가까운 순.
+    없으면 None. LLM 이 실패하면 저장된 게 없어 다음 실행에서 다시 고른다."""
+    from ai.llm_evaluation import needs_evaluation_fallback
+    rows = db.execute("""
+        SELECT DISTINCT n.notice_no, n.attend_req_close_at FROM bid_notice n
+        JOIN bid_attachment a ON a.notice_no = n.notice_no AND a.doc_kind = 'CRITERIA'
+        JOIN bid_document_content c ON c.attachment_id = a.id AND c.rule_extracted = 0
+        WHERE n.company_id_src = 'COM01' AND n.purchase_type = 'ConstructionService' AND n.bid_type = 'QualifiedEval'
+          AND n.is_open = 1 AND (n.attend_req_close_at IS NULL OR n.attend_req_close_at >= ?)
+        ORDER BY n.attend_req_close_at IS NULL, n.attend_req_close_at, n.notice_no""",
+                      (datetime.now().strftime("%Y-%m-%d %H:%M:%S"),)).fetchall()
+    return next((no for no, _ in rows if needs_evaluation_fallback(db, no)), None)
+
+
 def detail_targets(db, args, new_nos):
     """상세 수집 대상 (DB 기준): 신규·정정·첨부변경(needs_recollect)·이전에 못 끝낸 공고. 완료 공고는 재사용."""
     if args.notice:
@@ -546,13 +561,20 @@ def main():
     ap.add_argument("--srm-revision-check", type=int, default=0, metavar="N",
                     help="완료된 진행 중 공고 N건의 SRM 정정 차수를 다시 확인 (SRM만 바뀐 경우 감지, 기본 0)")
     ap.add_argument("--refresh", action="store_true", help="이미 수집한 공고도 다시 처리")
-    ap.add_argument("--with-llm", action="store_true", help="배점 저장 후 실패 산식·서류를 LLM으로 보완 (유료)")
+    ap.add_argument("--with-llm", action="store_true",
+                    help="배점 저장 후 서류를 LLM으로 보완, 규칙 추출 실패 산식은 실행당 1건만 LLM으로 보완 (유료, 하루 1회 실행)")
     ap.add_argument("--dry-run", action="store_true", help="목록 저장 후 상세 수집 대상만 출력 (SRM 요청 없음)")
     args = ap.parse_args()
     after_evaluation = None
     if args.with_llm:
+        from ai.llm_evaluation import needs_evaluation_fallback
         from ai.notice_extraction import process_notice_extraction
-        after_evaluation = process_notice_extraction
+
+        def after_evaluation(db, notice_no):
+            # 산식 LLM 이 필요한 공고는 여기서 부르지 않고 수집 끝에 1건만 (llm_evaluation_target)
+            if needs_evaluation_fallback(db, notice_no):
+                return {"notice_no": notice_no, "evaluation": {"status": "deferred"}}
+            return process_notice_extraction(db, notice_no)
     conf = MODE_DEFAULTS[args.mode]
     interval = args.interval or conf["interval"]
 
@@ -647,6 +669,18 @@ def main():
                   flush=True)
             if conf["pause_every"] and processed % conf["pause_every"] == 0 and i < len(targets):
                 time.sleep(conf["pause_seconds"])
+        if args.with_llm:  # LLM 비용 제한: 산식 보완은 실행당 1건. 실패하면 그대로 남아 다음 실행에서 다시 대상
+            db.commit()
+            target = llm_evaluation_target(db)
+            if target is None:
+                print("LLM 산식 보완: 대상 없음")
+            else:
+                try:
+                    result = process_notice_extraction(db, target)
+                except Exception as exc:
+                    db.rollback()
+                    result = {"notice_no": target, "error": f"{type(exc).__name__}: {exc}"[:300]}
+                print(f"LLM 산식 보완 (1건): {json.dumps(result, ensure_ascii=False)}")
     except clients.SrmBlocked as exc:
         reason = f"SRM 차단 의심으로 중단: {exc}"
         print(reason)
