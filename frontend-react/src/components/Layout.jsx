@@ -40,7 +40,7 @@ function Header() {
     <header className={`topbar${scrolled ? " scrolled" : ""}`}>
       <div className="wrap topbar-inner">
         <NavLink to="/" className="brand">
-          <span className="brand-mark" aria-hidden="true">입</span>
+          <img className="brand-logo" src="/favicon.svg" alt="" aria-hidden="true" width="30" height="30" />
           입찰메이트
         </NavLink>
         <nav className="topbar-nav" aria-label="주 메뉴">
