@@ -53,8 +53,6 @@
 .qna-msg.unavailable .qna-bubble { background: var(--brand-soft); }
 .qna-msg.error .qna-bubble { border-color: var(--danger, #c33); }
 .qna-sources a { text-decoration: underline; text-underline-offset: 2px; }
-.qna-sources summary { cursor: pointer; text-decoration: underline; }
-.qna-source-excerpt { margin: 4px 0 8px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .qna-warn { color: var(--warn, var(--text-3)); }
 
 /* 작성 중 표시 */

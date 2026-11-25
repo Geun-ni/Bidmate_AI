@@ -10,7 +10,6 @@ from pathlib import Path
 from urllib.parse import parse_qs, quote, unquote, urlsplit
 
 from ai.summary import summarize_notice
-from ai import qna
 from backend import auth, companies_api, favorites, notices_api, schedule, scoring, uploaded_criteria
 from backend.matching import match_notice
 
@@ -135,8 +134,6 @@ window.close();</script>""")
         """→ (함수, 로그인 필요 여부) 또는 None. 함수(db, body) → 결과(None 이면 404). GET 은 읽기 전용 DB"""
         q = lambda k: query.get(k, [""])[0]
         match (method, parts):
-            case ("POST", ["api", "qna"]):
-                return (lambda db, b: qna.answer(db, b, user), False)
             case ("GET", ["api", "auth", "me"]):                     # 로그인 안 했으면 {"user": null}
                 return (lambda db, b: {"user": user}), False
             case ("POST", ["api", "notices", no, "score"]):          # 예상 점수 계산 (저장 안 함)
@@ -209,11 +206,6 @@ window.close();</script>""")
         parts = [unquote(p) for p in url.path.strip("/").split("/")]
         raw = method == "PUT" and len(parts) == 5 and parts[3] == "uploaded-criteria"  # 파일 그대로 받음
         try:
-            if method == "POST" and parts == ["api", "qna"]:
-                length = int(self.headers.get("Content-Length") or 0)
-                if not 0 <= length <= 65536:
-                    self.send_json(400, {"error": "질문 요청이 너무 큽니다."})
-                    return
             if raw:
                 length = int(self.headers.get("Content-Length") or 0)
                 if length > uploaded_criteria.MAX_BYTES:

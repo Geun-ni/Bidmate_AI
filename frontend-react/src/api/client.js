@@ -162,7 +162,7 @@ export async function downloadAttachment(id, filename) {
 
 /* ───────── AI 질문 (Q&A) ─────────
  * POST /api/qna  { question, notice_no?, company_id?, history? }
- *   → { answer, sources?: [{ label, notice_no?, field? }] } 또는 { delegate: "local" }
+ *   → { answer, sources?: [{ label, notice_no?, field? }] }
  * 백엔드가 질문을 받아 DB 표 설명과 함께 LLM에 넘기고, 조회한 데이터로 답을 만든다 (백엔드 담당).
  * 아직 경로가 없으면 404 → 화면에서 '준비 중'으로 안내한다.
  */
