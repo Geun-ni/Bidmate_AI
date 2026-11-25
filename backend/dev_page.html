@@ -279,6 +279,9 @@ function field(n) {  // 항목 1개 → [입력 HTML, 설명]
     return [`${p.denominator} ${number(k + '_total', '명')}<br>` +
             p.terms.map((t, i) => `${esc(t.label)} ${number(`${k}_${i}`, '명')}`).join('<br>'),
             `(${p.numerator} / ${p.denominator}) × 점수 합, 최대 ${p.limit}점`];
+  if (ik === 'workforce_grade')
+    return [`양성 ${number(k, '명')}<br>` + p.held.map((h, i) => `보유 ${esc(h.name)} ${number(`${k}_held_${i}`, '명')}`).join('<br>'),
+            n.formula || ''];
   if (ik === 'tech_dev')
     return [`<textarea data-key="${k}" data-kind="json" rows="3" cols="40" placeholder='[{"kind":1,"years":3,"inventors":1}]'></textarea>`,
             `kind: ${p.kinds.map((x, i) => `${i}=${x.name}(${x.per_unit}점)`).join(', ')} · years: 경과 연수 · inventors: 출원자 수` +

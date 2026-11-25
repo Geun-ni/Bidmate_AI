@@ -338,7 +338,11 @@ def collect_srm(db, srm, notice_no, found_kinds):
                   WHERE notice_no=?""",
                (to_int(basic.get("totalAAmt")), to_int(basic.get("overHeadCostAmount")),
                 basic.get("openBidDateTime"), None if revision is None else str(revision), notice_no))
-    evals = {k: basic.get(camel(k)) for k in EVAL_KEYS}
+    # 공사/용역 구분·사정액: 공식 API 값이 우선, 없을 때(--srm-list 로 받은 공고)만 SRM 상세로 채운다
+    db.execute("""UPDATE bid_notice SET item_type=COALESCE(item_type, ?),
+                  approximate_amount=COALESCE(approximate_amount, ?) WHERE notice_no=?""",
+               (basic.get("itemType"), to_int(basic.get("approximateAmount")), notice_no))
+    evals ={k: basic.get(camel(k)) for k in EVAL_KEYS}
     raw = {"search": sanitize({k: row.get(k) for k in ("announceNo", "areaCodeName", "limitedReasonCode")}),
            "basic": {camel(k): v for k, v in evals.items()}, "items": sanitize(items)}
     db.execute(f"""INSERT OR REPLACE INTO bid_restriction_snapshot (notice_no, fetch_status, error,
@@ -482,6 +486,28 @@ def fetch_list(api_key, begin, end):
     return rows, failed
 
 
+def srm_list_row(r):
+    """SRM 목록 행 → 공식 API 행 모양 (--srm-list). SRM 목록엔 등록일시·첨부 링크가 없어 첨부는 SRM 에서 받는다."""
+    at = lambda v: v[:19].replace("T", " ") if v else None  # '2026-11-30T18:00:00.000+09:00' → KST 문자열
+    return {"no": r["announceNo"], "companyId": "COM01", "name": r.get("announceName"),
+            "purchaseType": "ConstructionService", "bidType": r.get("bidType"),
+            "noticeDate": (r.get("announceDate") or "")[:10].replace("-", "") or None,
+            "bidAttendReqBeginDatetime": at(r.get("startRequestDate")),
+            "bidAttendReqCloseDatetime": at(r.get("endRequestDate")),
+            "beginDatetime": at(r.get("startProposalDate")), "endDatetime": at(r.get("endProposalDate")),
+            "presumedPrice": r.get("presumedprice"),
+            "progressState": "Cancel" if r.get("progressStatus") == "Cancel" else "AttendProgress",
+            "listSource": "SRM"}
+
+
+def fetch_srm_list(begin, end, interval):
+    """Open API 대신 SRM 목록 → (행 목록, 실패 목록)."""
+    try:
+        return [srm_list_row(r) for r in clients.SrmClient(interval=interval).list_notices(begin, end)], []
+    except Exception as exc:
+        return [], [f"SRM 목록 {begin}~{end}: {type(exc).__name__}: {str(exc)[:120]}"]
+
+
 def llm_evaluation_target(db):
     """LLM 으로 산식을 보완할 공고 1건: 접수 중 + 기준서 규칙 추출 실패 + 아직 LLM 결과 없음 → 신청 마감이 가까운 순.
     없으면 None. LLM 이 실패하면 저장된 게 없어 다음 실행에서 다시 고른다."""
@@ -563,6 +589,8 @@ def main():
     ap.add_argument("--refresh", action="store_true", help="이미 수집한 공고도 다시 처리")
     ap.add_argument("--with-llm", action="store_true",
                     help="배점 저장 후 서류를 LLM으로 보완, 규칙 추출 실패 산식은 실행당 1건만 LLM으로 보완 (유료, 하루 1회 실행)")
+    ap.add_argument("--srm-list", action="store_true",
+                    help="Open API 장애 때 목록을 SRM 에서 받음 (일회성). DB에 없는 새 공고만 추가, 마지막 반영 시점은 안 옮김")
     ap.add_argument("--dry-run", action="store_true", help="목록 저장 후 상세 수집 대상만 출력 (SRM 요청 없음)")
     args = ap.parse_args()
     after_evaluation = None
@@ -584,14 +612,20 @@ def main():
     db.commit()
     today = date.today()
     begin, end, why = list_window(db, args, today)
-    rows, list_errors = fetch_list(clients.load_api_key(ROOT), begin, end)
+    if args.srm_list:
+        rows, list_errors = fetch_srm_list(begin, end, interval)
+    else:
+        rows, list_errors = fetch_list(clients.load_api_key(ROOT), begin, end)
     rows = latest_per_notice(rows)
-    list_synced = int(not list_errors)
+    # SRM 목록은 대체용: 반영 시점을 옮기지 않아 Open API 가 돌아오면 같은 기간을 공식 API 로 다시 받는다
+    list_synced = int(not list_errors and not args.srm_list)
     wanted = set(args.notice or [])
     changes = {NEW: [], UPDATED: [], CORRECTED: []}
     for row in rows:  # 서비스 범위 밖 공고는 저장하지 않음 (직접 지정한 공고는 예외)
         if not (row["no"] in wanted or in_scope(row)):
             continue
+        if args.srm_list and db.execute("SELECT 1 FROM bid_notice WHERE notice_no=?", (row["no"],)).fetchone():
+            continue  # 공식 API 로 받은 공고는 SRM 모양으로 덮어쓰지 않음
         # [알림 연결 지점] NEW = 공식 API에서 처음 본 공고 (실행 후에는 first_seen_at >= collect_run.started_at)
         change = upsert_notice(db, row)
         if change in changes:
@@ -601,7 +635,7 @@ def main():
                (begin.strftime("%Y%m%d"), end.strftime("%Y%m%d"), list_synced, len(rows), len(changes[NEW]),
                 len(changes[UPDATED]), len(changes[CORRECTED]), run_id))
     db.commit()
-    print(f"[{args.mode}] 목록 {begin}~{end} ({why}): 공식 API {len(rows)}건 → 서비스 범위 "
+    print(f"[{args.mode}] 목록 {begin}~{end} ({why}): {'SRM' if args.srm_list else '공식 API'} {len(rows)}건 → 서비스 범위 "
           f"{sum(map(in_scope, rows))}건 / 신규 {len(changes[NEW])}, 기본정보 갱신 {len(changes[UPDATED])}, "
           f"정정·첨부변경 {len(changes[CORRECTED])}")
     for err in list_errors:

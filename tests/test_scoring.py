@@ -462,3 +462,60 @@ class LlmEvaluationTargetTest(unittest.TestCase):
             db.close()
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
+
+
+class SrmListRowTest(unittest.TestCase):
+    """--srm-list: SRM 목록 행을 공식 API 행 모양으로 바꾼다 (취소 공고는 진행 중이 아님)"""
+
+    def test_row(self):
+        from backend.collector.collect import in_scope, is_open, srm_list_row
+        r = {"announceNo": "E012608290", "announceName": "테스트 공사", "rfxType": "ServiceBid",
+             "bidType": "QualifiedEval", "startRequestDate": None, "endRequestDate": "2026-12-01T18:00:00.000+09:00",
+             "startProposalDate": "2026-11-24T00:00:00.000+09:00", "endProposalDate": "2026-12-02T10:00:00.000+09:00",
+             "announceDate": "2026-11-24T00:00:00.000+09:00", "progressStatus": "NotDetermined",
+             "presumedprice": "172533240"}
+        row = srm_list_row(r)
+        self.assertEqual((row["no"], row["noticeDate"], row["bidAttendReqCloseDatetime"], row["endDatetime"]),
+                         ("E012608290", "20261124", "2026-12-01 18:00:00", "2026-12-02 10:00:00"))
+        self.assertTrue(in_scope(row))
+        self.assertTrue(is_open(row, "2026-11-25 00:00:00"))
+        self.assertFalse(is_open(srm_list_row({**r, "progressStatus": "Cancel"}), "2026-11-25 00:00:00"))
+
+
+class RuleReinforce1125Test(unittest.TestCase):
+    """2026-11-25 보강: 변전 전기원 양성·보유, 금액 구간별 시공경험 산식, 【별표】 신인도, ①② 합산 가점, 주석 안 구간"""
+
+    @classmethod
+    def setUpClass(cls):
+        import sqlite3
+        from backend.db.extract_evaluation_rules import extract_notice
+        db = sqlite3.connect(DEFAULT_DB_PATH.as_uri() + "?mode=ro", uri=True)
+        db.row_factory = sqlite3.Row
+        cls.r = {n: extract_notice(db, n) for n in
+                 ("E012608197", "E012608263", "E012608270", "E012608295", "E012608280")}
+        db.close()
+
+    def test_all_extracted(self):
+        for n, r in self.r.items():
+            self.assertTrue(r["rule_extracted"], (n, r.get("issues"), r.get("detail_issues")))
+
+    def test_workforce(self):
+        wf = [x for x in self.r["E012608197"]["rows"] if x.get("input_key") == "workforce_grade"]
+        self.assertEqual(len(wf), 1)
+        p = wf[0]["parameters"]
+        self.assertEqual((p["trained"], [h["per_unit"] for h in p["held"]]), ({"per_unit": 2.5, "cap": 2.5}, [3.0, 2.5]))
+        from backend.scoring import _leaf
+        node = {"key": "9", "name": "변전전기원", "category": "PERFORMANCE", "max_score": 3.5, "parameters": p,
+                "rule_type": "FORMULA", "input_key": "workforce_grade", "verification_status": "UNVERIFIED",
+                "rounding": None}
+        self.assertEqual(_leaf(node, {"9": 1, "9_held_0": 1}, {})["score"], 3.5)   # 2.5 + 3.0 = 5.5
+        self.assertEqual(_leaf(node, {"9": 3}, {})["score"], 1.2)                  # 양성 상한 2.5
+        self.assertEqual(_leaf(node, {"9": 0, "9_held_1": 0}, {})["score"], 0)
+
+    def test_band_formula(self):  # 3.6억 → 3~10억 구간 산식(예비가격기초금액 × 1/2)만
+        perf = [x for x in self.r["E012608263"]["rows"] if x.get("input_key") == "performance_amount"]
+        self.assertEqual([x["parameters"]["multiplier"] for x in perf], [0.5])
+
+    def test_additive_bonus(self):
+        items = [x for x in self.r["E012608295"]["rows"] if x["rule_type"] == "TABLE" and x["category"] == "BONUS"]
+        self.assertEqual([x["parameters"]["rows"][0]["score"] for x in items], [2.5, 0.5])
