@@ -6,7 +6,7 @@
 # 하는 일
 #   0. PC 가 최신 main 인지 확인 (화면은 PC 에서 빌드하므로, 다른 브랜치면 그 브랜치 화면이 올라간다 → 멈춤)
 #   1. 서버 DB 백업 (bidmate.sqlite3.bak-시각)
-#   2. 서버 코드를 GitHub main 으로 맞추고 스키마 적용(init_db, 새 테이블만 추가) 후 백엔드 재시작
+#   2. 서버 코드를 GitHub main 으로 맞추고 스키마 적용(init_db, 새 테이블만 추가) 후 백엔드 재시작 (+ 원격 MCP 재시작)
 #   3. 화면 빌드(frontend-react/dist) → 서버 /var/www/bidmate 에 덮어쓰기 (사이트 폴더를 지우지 않는다)
 #   4. 사이트·API 응답 확인
 # 배점 룰 재추출·발주부서 채우기 같은 데이터 정리는 필요할 때만 따로 돌린다 (backend/db/README.md).
@@ -45,6 +45,10 @@ Invoke-Remote ('cd /opt/bidmate/app && sudo -u bidmate git fetch -q origin main 
                'sudo -u bidmate git checkout -q -B main FETCH_HEAD && sudo -u bidmate git log --oneline -1 && ' +
                'sudo -u bidmate /opt/bidmate/venv/bin/python -m backend.db.init_db && ' +
                'systemctl restart bidmate-backend && sleep 2 && systemctl is-active bidmate-backend')
+# 원격 MCP 는 서비스가 등록돼 있을 때만 (deploy/bidmate-mcp.service)
+Invoke-Remote ('if [ -f /etc/systemd/system/bidmate-mcp.service ]; then cd /opt/bidmate/app && ' +
+               '/opt/bidmate/venv/bin/pip install -q -r bidmate_mcp/requirements.txt && ' +
+               'systemctl restart bidmate-mcp && sleep 2 && echo "mcp: $(systemctl is-active bidmate-mcp)"; fi')
 
 if (-not $SkipFrontend) {
     Write-Host "3. 화면 빌드 후 올리기"

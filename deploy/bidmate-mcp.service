@@ -1,0 +1,21 @@
+# 원격 MCP 서버 (systemd). 서버 경로: /etc/systemd/system/bidmate-mcp.service
+# 코드 /opt/bidmate/app (bidmate_mcp), 가상환경 /opt/bidmate/venv, 실행 계정 bidmate.
+# 서버 안(127.0.0.1:8001)에서만 열고, 밖에서는 nginx https://…/mcp 로 들어온다. 공개 데이터만 (공고·배점·원문)
+[Unit]
+Description=BidMate MCP server
+After=network-online.target bidmate-backend.service
+Wants=network-online.target
+
+[Service]
+User=bidmate
+Group=bidmate
+WorkingDirectory=/opt/bidmate/app
+Environment=PYTHONIOENCODING=utf-8
+Environment=MCP_ALLOWED_HOSTS=211-233-216-208.sslip.io
+ExecStart=/opt/bidmate/venv/bin/python -m bidmate_mcp.server --http --port 8001
+Restart=on-failure
+RestartSec=5
+MemoryMax=300M
+
+[Install]
+WantedBy=multi-user.target
