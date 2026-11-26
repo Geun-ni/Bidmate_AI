@@ -13,6 +13,7 @@ def load_env(path=None):
         key = key.strip()
         if not separator or key not in (
             "OPENAI_API_KEY", "OPENAI_MODEL", "LLM_PROVIDER", "OLLAMA_MODEL", "OLLAMA_BASE_URL",
+            "QNA_DAILY_LLM_LIMIT",
         ):
             continue
         value = value.strip()
