@@ -85,3 +85,34 @@ class FeedbackTest(unittest.TestCase):
                 feedback.list_feedback(self.db, who)
         with self.assertRaises(ValueError):
             feedback.list_feedback(self.db, admin, limit=500)
+
+    def test_status_and_csv(self):
+        user, _ = auth.signup(self.db, {"email": "fb@bidmate.test", "password": "password-1"})
+        admin = {**user, "is_admin": True}
+        g = feedback.save(self.db, {"kind": "general", "category": "IDEA", "message": '엑셀, "따옴표"\n줄바꿈',
+                                    "context": CTX}, user)
+        feedback.save(self.db, {"kind": "survey", "answers": {"role": "공사 업체", "likert": {"find_easy": 4},
+                                                              "best_features": ["점수 계산", "일정"], "nps": 9},
+                                "context": CTX})
+        self.assertEqual(feedback.get_feedback(self.db, admin, g["id"])["status"], "NEW")
+        done = feedback.set_status(self.db, admin, g["id"], {"status": "DONE"})
+        self.assertEqual((done["status"], done["status_updated_by"]), ("DONE", user["user_id"]))
+        self.assertEqual(feedback.list_feedback(self.db, admin, {"status": "DONE"})["count"], 1)
+        self.assertIsNone(feedback.set_status(self.db, admin, 9999, {"status": "DONE"}))
+        with self.assertRaises(ValueError):
+            feedback.set_status(self.db, admin, g["id"], {"status": "WHAT"})
+        with self.assertRaises(PermissionError):
+            feedback.set_status(self.db, user, g["id"], {"status": "CHECKED"})
+
+        name, data = feedback.export_csv(self.db, admin)
+        self.assertTrue(name.endswith(".csv") and data.startswith(b"\xef\xbb\xbf"))   # 엑셀용 BOM
+        import csv
+        import io
+        rows = list(csv.DictReader(io.StringIO(data.decode("utf-8-sig"))))
+        survey, general = rows                                                          # 최신순
+        self.assertEqual((survey["종류"], survey["likert.find_easy"], survey["best_features"], survey["nps"]),
+                         ("survey", "4", "점수 계산; 일정", "9"))
+        self.assertEqual((general["내용"], general["처리 상태"], general["보던 화면"]),
+                         ('엑셀, "따옴표"\n줄바꿈', "DONE", "/notices/E1"))
+        with self.assertRaises(PermissionError):
+            feedback.export_csv(self.db, user)

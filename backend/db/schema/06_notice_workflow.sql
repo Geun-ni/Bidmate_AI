@@ -104,5 +104,9 @@ CREATE TABLE IF NOT EXISTS beta_feedback (
     attachment_name  TEXT,
     attachment_type  TEXT,
     attachment_data  BLOB,
-    created_at       TEXT NOT NULL
+    created_at       TEXT NOT NULL,
+    -- 처리 상태 (관리자): NEW 미확인 → CHECKED 확인함 → DONE 반영함
+    status             TEXT NOT NULL DEFAULT 'NEW' CHECK (status IN ('NEW', 'CHECKED', 'DONE')),
+    status_updated_at  TEXT,
+    status_updated_by  TEXT REFERENCES app_user(user_id) ON DELETE SET NULL
 );

@@ -1,10 +1,13 @@
 """베타 의견 저장 (POST /api/feedback, UI-10) — 형식: docs/design/frontend-requirements.md 11장.
 
 세 종류(kind)를 beta_feedback 한 테이블에 쌓는다. 로그인 없이도 보낼 수 있고, 로그인했으면 세션 사용자로 기록한다.
-조회는 관리자(.env ADMIN_EMAIL)만: GET /api/admin/feedback (목록), GET /api/admin/feedback/<id> (1건 + 첨부 이미지).
+조회·처리는 관리자(.env ADMIN_EMAIL)만: GET /api/admin/feedback (목록), GET /api/admin/feedback/export (CSV),
+GET /api/admin/feedback/<id> (1건 + 첨부 이미지), PUT /api/admin/feedback/<id> {"status"} (처리 상태).
 """
 import base64
 import binascii
+import csv
+import io
 import json
 import re
 from datetime import datetime
@@ -90,7 +93,8 @@ def save(db, body, user=None):
 
 
 # ------------------------------------------------------------------ 관리자 조회 (GET /api/admin/feedback…)
-LIST_FILTERS = ("kind", "category", "target", "value")
+LIST_FILTERS = ("kind", "category", "target", "value", "status")
+STATUSES = {"NEW", "CHECKED", "DONE"}  # 미확인 / 확인함 / 반영함
 
 
 def _require_admin(user):
@@ -136,3 +140,52 @@ def get_feedback(db, user, feedback_id):
     item["attachment"] = (f"data:{row['attachment_type']};base64,{base64.b64encode(data).decode()}"
                           if data is not None else None)
     return item
+
+
+def set_status(db, user, feedback_id, body):
+    """처리 상태 바꾸기 {"status": "NEW"|"CHECKED"|"DONE"} → 바뀐 1건 (없으면 None → 404)"""
+    _require_admin(user)
+    status = body.get("status") if isinstance(body, dict) else None
+    if status not in STATUSES:
+        raise ValueError("status 는 NEW·CHECKED·DONE 중 하나여야 합니다.")
+    with db:
+        cur = db.execute("UPDATE beta_feedback SET status=?, status_updated_at=?, status_updated_by=? WHERE id=?",
+                         (status, datetime.now().isoformat(timespec="seconds"), user["user_id"], int(feedback_id)))
+    return get_feedback(db, user, feedback_id) if cur.rowcount else None
+
+
+def _flat(value, prefix=""):
+    """설문 answers·👍👎 extra → {"likert.find_easy": 4, "best_features": "점수 계산; 일정", …}"""
+    if isinstance(value, dict):
+        out = {}
+        for k, v in value.items():
+            out.update(_flat(v, f"{prefix}{k}."))
+        return out
+    return {prefix[:-1]: "; ".join(map(str, value)) if isinstance(value, list) else value}
+
+
+CSV_COLUMNS = [("id", "번호"), ("created_at", "보낸 시각"), ("kind", "종류"), ("category", "유형"), ("target", "대상"),
+               ("value", "👍👎"), ("message", "내용"), ("email", "답변 받을 이메일"), ("user_email", "보낸 사람"),
+               ("notice_no", "공고번호"), ("page", "보던 화면"), ("has_attachment", "첨부"), ("status", "처리 상태"),
+               ("status_updated_at", "처리 시각")]
+
+
+def export_csv(db, user, filters=None):
+    """→ (파일 이름, CSV 바이트). 엑셀에서 한글이 깨지지 않게 UTF-8 BOM. 설문·추가정보는 항목마다 열로 펼친다"""
+    _require_admin(user)
+    items, offset = [], 0
+    while True:
+        page = list_feedback(db, user, filters, limit=200, offset=offset)["items"]
+        items += page
+        offset += len(page)
+        if len(page) < 200:
+            break
+    extra = [_flat(i["payload"]) if i["payload"] else {} for i in items]
+    extra_keys = sorted({k for e in extra for k in e})
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow([label for _, label in CSV_COLUMNS] + extra_keys)
+    for item, e in zip(items, extra):
+        item = {**item, "page": (item["context"] or {}).get("page")}
+        w.writerow([item.get(k) for k, _ in CSV_COLUMNS] + [e.get(k) for k in extra_keys])
+    return f"bidmate_feedback_{datetime.now():%Y%m%d}.csv", buf.getvalue().encode("utf-8-sig")

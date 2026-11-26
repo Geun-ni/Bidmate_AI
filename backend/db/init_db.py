@@ -80,6 +80,10 @@ COLUMN_MIGRATIONS = [
     ("required_document_item", "source_quote", "TEXT"),
     ("required_document_item", "source_sha256", "TEXT"),
     ("required_document_item", "updated_by", "TEXT CHECK (updated_by IN ('PARSER', 'LLM', 'USER'))"),
+    # 2026-11-26 베타 의견 처리 상태
+    ("beta_feedback", "status", "TEXT NOT NULL DEFAULT 'NEW' CHECK (status IN ('NEW', 'CHECKED', 'DONE'))"),
+    ("beta_feedback", "status_updated_at", "TEXT"),
+    ("beta_feedback", "status_updated_by", "TEXT REFERENCES app_user(user_id) ON DELETE SET NULL"),
 ]
 
 # 시군구 이름을 시/군/구 칸으로 나눈다. region_name 은 'X시', 'X군', 'X구', 'X시 Y구' 네 꼴뿐 (253건 확인)
