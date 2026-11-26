@@ -1,6 +1,7 @@
 """베타 의견 저장 (POST /api/feedback, UI-10) — 형식: docs/design/frontend-requirements.md 11장.
 
 세 종류(kind)를 beta_feedback 한 테이블에 쌓는다. 로그인 없이도 보낼 수 있고, 로그인했으면 세션 사용자로 기록한다.
+조회는 관리자(.env ADMIN_EMAIL)만: GET /api/admin/feedback (목록), GET /api/admin/feedback/<id> (1건 + 첨부 이미지).
 """
 import base64
 import binascii
@@ -86,3 +87,52 @@ def save(db, body, user=None):
         cur = db.execute(f"INSERT INTO beta_feedback ({cols}) VALUES ({', '.join('?' * len(row))})",
                          tuple(row.values()))
     return {"ok": True, "id": cur.lastrowid}
+
+
+# ------------------------------------------------------------------ 관리자 조회 (GET /api/admin/feedback…)
+LIST_FILTERS = ("kind", "category", "target", "value")
+
+
+def _require_admin(user):
+    if not user or not user.get("is_admin"):
+        raise PermissionError("관리자만 볼 수 있습니다.")
+
+
+def _item(row):
+    item = {k: row[k] for k in row.keys() if k != "attachment_data"}
+    for k in ("payload", "context"):
+        item[k] = json.loads(item[k]) if item[k] else None
+    item["has_attachment"] = row["attachment_data"] is not None
+    return item
+
+
+def list_feedback(db, user, filters=None, limit=50, offset=0):
+    """→ {"items": 최신순(첨부 이미지 본문 제외), "count": 조건에 맞는 전체 수, "summary": 종류별 수}.
+    filters: kind·category·target·value 중 값이 있는 것만 같음(=) 조건"""
+    _require_admin(user)
+    limit, offset = int(limit or 50), int(offset or 0)
+    if not 1 <= limit <= 200 or offset < 0:
+        raise ValueError("limit 은 1~200, offset 은 0 이상이어야 합니다.")
+    conds = {k: v for k, v in (filters or {}).items() if k in LIST_FILTERS and v}
+    where = " AND ".join(f"f.{k}=?" for k in conds) or "1=1"
+    rows = db.execute(f"""SELECT f.*, u.email AS user_email FROM beta_feedback f
+                          LEFT JOIN app_user u ON u.user_id = f.user_id
+                          WHERE {where} ORDER BY f.id DESC LIMIT ? OFFSET ?""",
+                      (*conds.values(), limit, offset)).fetchall()
+    count = db.execute(f"SELECT count(*) FROM beta_feedback f WHERE {where}", tuple(conds.values())).fetchone()[0]
+    summary = dict(db.execute("SELECT kind, count(*) FROM beta_feedback GROUP BY kind").fetchall())
+    return {"items": [_item(r) for r in rows], "count": count, "summary": summary}
+
+
+def get_feedback(db, user, feedback_id):
+    """→ 의견 1건 + 첨부 이미지(data URL). 없으면 None (404)"""
+    _require_admin(user)
+    row = db.execute("""SELECT f.*, u.email AS user_email FROM beta_feedback f
+                        LEFT JOIN app_user u ON u.user_id = f.user_id WHERE f.id=?""", (int(feedback_id),)).fetchone()
+    if row is None:
+        return None
+    item = _item(row)
+    data = row["attachment_data"]
+    item["attachment"] = (f"data:{row['attachment_type']};base64,{base64.b64encode(data).decode()}"
+                          if data is not None else None)
+    return item

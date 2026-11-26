@@ -141,6 +141,11 @@ window.close();</script>""")
                 return (lambda db, b: qna.answer(db, b, user)), False
             case ("POST", ["api", "feedback"]):                       # 베타 의견 저장 (로그인 없이도 가능)
                 return (lambda db, b: feedback.save(db, b, user)), False
+            case ("GET", ["api", "admin", "feedback"]):               # 베타 의견 목록 (관리자만, ?kind=&limit=&offset=)
+                return (lambda db, b: feedback.list_feedback(
+                    db, user, {k: q(k) for k in feedback.LIST_FILTERS}, q("limit") or 50, q("offset") or 0)), True
+            case ("GET", ["api", "admin", "feedback", fid]):          # 의견 1건 + 첨부 이미지 (관리자만)
+                return (lambda db, b: feedback.get_feedback(db, user, fid)), True
             case ("GET", ["api", "auth", "me"]):                     # 로그인 안 했으면 {"user": null}
                 return (lambda db, b: {"user": user}), False
             case ("POST", ["api", "notices", no, "score"]):          # 예상 점수 계산 (저장 안 함)
@@ -221,12 +226,12 @@ window.close();</script>""")
             if method == "POST" and parts == ["api", "feedback"]:
                 length = int(self.headers.get("Content-Length") or 0)
                 if not 0 <= length <= FEEDBACK_MAX_BYTES:
-                    self.send_json(400, {"error": "첨부파일 크기를 확인해주세요.(최대 3MB)"})
+                    self.send_json(400, {"error": "첨부파일 크기를 확인해주세요. (최대 3MB)"})
                     return
             if raw:
                 length = int(self.headers.get("Content-Length") or 0)
                 if length > uploaded_criteria.MAX_BYTES:
-                    self.send_json(400, {"error": "파일이 너무 큽니다 (최대 20MB)."})
+                    self.send_json(400, {"error": "첨부파일 크기를 확인해주세요. (최대 20MB)"})
                     return
                 body = self.rfile.read(length)
             else:
@@ -259,6 +264,8 @@ window.close();</script>""")
                 self.send_json(404, {"error": "찾을 수 없습니다."})
             else:
                 self.send_json(201 if method == "POST" and parts[1] == "companies" else 200, result)
+        except PermissionError as exc:  # 관리자 전용 (feedback 조회)
+            self.send_json(403, {"error": str(exc)})
         except (companies_api.InputError, uploaded_criteria.UploadError) as exc:
             self.send_json(400, {"error": str(exc)})
         except (TypeError, ValueError, IndexError, KeyError) as exc:  # 입력값 형식 오류
