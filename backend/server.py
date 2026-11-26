@@ -10,12 +10,14 @@ from pathlib import Path
 from urllib.parse import parse_qs, quote, unquote, urlsplit
 
 from ai.summary import summarize_notice
+from ai import qna
 from backend import auth, companies_api, favorites, notices_api, schedule, scoring, uploaded_criteria
 from backend.matching import match_notice
 
 
 ROOT = Path(__file__).resolve().parents[1]
 DEMO_DATA = ROOT / "data" / "sample" / "demo.json"
+QNA_MAX_BYTES = 64 * 1024  # 챗봇 요청 본문 상한 (질문 1,000자 + 대화 이력)
 DEV_PAGE = Path(__file__).with_name("dev_page.html")  # --dev 일 때만 /dev 로 연다 (API 확인용, 배포 서버에서는 끔)
 
 
@@ -134,6 +136,8 @@ window.close();</script>""")
         """→ (함수, 로그인 필요 여부) 또는 None. 함수(db, body) → 결과(None 이면 404). GET 은 읽기 전용 DB"""
         q = lambda k: query.get(k, [""])[0]
         match (method, parts):
+            case ("POST", ["api", "qna"]):                            # 챗봇 답변 (LLM 은 로그인·하루 한도를 AI 모듈이 확인)
+                return (lambda db, b: qna.answer(db, b, user)), False
             case ("GET", ["api", "auth", "me"]):                     # 로그인 안 했으면 {"user": null}
                 return (lambda db, b: {"user": user}), False
             case ("POST", ["api", "notices", no, "score"]):          # 예상 점수 계산 (저장 안 함)
@@ -206,6 +210,11 @@ window.close();</script>""")
         parts = [unquote(p) for p in url.path.strip("/").split("/")]
         raw = method == "PUT" and len(parts) == 5 and parts[3] == "uploaded-criteria"  # 파일 그대로 받음
         try:
+            if method == "POST" and parts == ["api", "qna"]:
+                length = int(self.headers.get("Content-Length") or 0)
+                if not 0 <= length <= QNA_MAX_BYTES:
+                    self.send_json(400, {"error": "질문 요청이 너무 큽니다."})
+                    return
             if raw:
                 length = int(self.headers.get("Content-Length") or 0)
                 if length > uploaded_criteria.MAX_BYTES:
