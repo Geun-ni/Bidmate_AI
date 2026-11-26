@@ -63,3 +63,25 @@ class FeedbackTest(unittest.TestCase):
             with self.subTest(body=body), self.assertRaises(ValueError):
                 feedback.save(self.db, body)
         self.assertEqual(self.db.execute("SELECT count(*) FROM beta_feedback").fetchone()[0], 0)
+
+    def test_admin_list_and_detail(self):
+        user, _ = auth.signup(self.db, {"email": "fb@bidmate.test", "password": "password-1"})
+        g = feedback.save(self.db, {"kind": "general", "category": "BUG", "message": "오류",
+                                    "attachment": {"name": "a.png", "data": PNG}, "context": CTX}, user)
+        feedback.save(self.db, {"kind": "reaction", "target": "qna", "ref_id": "1", "value": "up", "context": CTX})
+        admin = {**user, "is_admin": True}
+        everything = feedback.list_feedback(self.db, admin)
+        self.assertEqual((everything["count"], everything["summary"]), (2, {"general": 1, "reaction": 1}))
+        self.assertEqual(everything["items"][0]["kind"], "reaction")                     # 최신순
+        bugs = feedback.list_feedback(self.db, admin, {"kind": "general", "category": "BUG"})
+        item = bugs["items"][0]
+        self.assertEqual((bugs["count"], item["user_email"], item["has_attachment"], item["context"]["page"]),
+                         (1, "fb@bidmate.test", True, "/notices/E1"))
+        self.assertNotIn("attachment_data", item)
+        self.assertEqual(feedback.get_feedback(self.db, admin, g["id"])["attachment"], PNG)
+        self.assertIsNone(feedback.get_feedback(self.db, admin, 9999))
+        for who in (None, user):                                                         # 관리자 아니면 막음
+            with self.assertRaises(PermissionError):
+                feedback.list_feedback(self.db, who)
+        with self.assertRaises(ValueError):
+            feedback.list_feedback(self.db, admin, limit=500)

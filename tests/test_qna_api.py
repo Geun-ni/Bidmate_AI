@@ -98,3 +98,13 @@ class QnaApiTest(unittest.TestCase):
         self.assertEqual((status, res["ok"]), (200, True))
         self.assertEqual(self.post(json.dumps({"kind": "general"}).encode(), url)[0], 400)
         self.assertEqual(self.oversized("/api/feedback", server.FEEDBACK_MAX_BYTES + 1)[0], 400)
+
+    def test_admin_feedback_needs_login(self):
+        url = self.url.replace("/qna", "/admin/feedback")
+        try:
+            urllib.request.urlopen(url)
+            code = 200
+        except urllib.error.HTTPError as exc:
+            code = exc.code
+            exc.close()
+        self.assertEqual(code, 401)
