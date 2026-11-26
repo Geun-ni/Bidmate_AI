@@ -14,7 +14,7 @@ CREATE TABLE IF NOT EXISTS bid_notice (
     item_type                     TEXT,                 -- Construction / Service
     bid_type                      TEXT,                 -- QualifiedEval (낙찰방법)
     competition_type              TEXT,
-    work_type                     TEXT,                 -- 공사유형 분류 (분류 규칙 예정)
+    work_type                     TEXT,                 -- 공사유형: 분류 안 함
     place_name                    TEXT,                 -- 발주기관
     notice_date                   TEXT,
     attend_req_begin_at           TEXT,                 -- 입찰참가신청 시작
