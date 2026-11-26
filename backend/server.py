@@ -11,13 +11,14 @@ from urllib.parse import parse_qs, quote, unquote, urlsplit
 
 from ai.summary import summarize_notice
 from ai import qna
-from backend import auth, companies_api, favorites, notices_api, schedule, scoring, uploaded_criteria
+from backend import auth, companies_api, favorites, feedback, notices_api, schedule, scoring, uploaded_criteria
 from backend.matching import match_notice
 
 
 ROOT = Path(__file__).resolve().parents[1]
 DEMO_DATA = ROOT / "data" / "sample" / "demo.json"
 QNA_MAX_BYTES = 64 * 1024  # 챗봇 요청 본문 상한 (질문 1,000자 + 대화 이력)
+FEEDBACK_MAX_BYTES = 5 * 1024 * 1024  # 베타 의견 본문 상한 (첨부 이미지 3MB → base64 약 4MB)
 DEV_PAGE = Path(__file__).with_name("dev_page.html")  # --dev 일 때만 /dev 로 연다 (API 확인용, 배포 서버에서는 끔)
 
 
@@ -138,6 +139,8 @@ window.close();</script>""")
         match (method, parts):
             case ("POST", ["api", "qna"]):                            # 챗봇 답변 (LLM 은 로그인·하루 한도를 AI 모듈이 확인)
                 return (lambda db, b: qna.answer(db, b, user)), False
+            case ("POST", ["api", "feedback"]):                       # 베타 의견 저장 (로그인 없이도 가능)
+                return (lambda db, b: feedback.save(db, b, user)), False
             case ("GET", ["api", "auth", "me"]):                     # 로그인 안 했으면 {"user": null}
                 return (lambda db, b: {"user": user}), False
             case ("POST", ["api", "notices", no, "score"]):          # 예상 점수 계산 (저장 안 함)
@@ -214,6 +217,11 @@ window.close();</script>""")
                 length = int(self.headers.get("Content-Length") or 0)
                 if not 0 <= length <= QNA_MAX_BYTES:
                     self.send_json(400, {"error": "질문 요청이 너무 큽니다."})
+                    return
+            if method == "POST" and parts == ["api", "feedback"]:
+                length = int(self.headers.get("Content-Length") or 0)
+                if not 0 <= length <= FEEDBACK_MAX_BYTES:
+                    self.send_json(400, {"error": "첨부파일 크기를 확인해주세요.(최대 3MB)"})
                     return
             if raw:
                 length = int(self.headers.get("Content-Length") or 0)
