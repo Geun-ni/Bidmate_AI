@@ -338,10 +338,11 @@ def collect_srm(db, srm, notice_no, found_kinds):
                   WHERE notice_no=?""",
                (to_int(basic.get("totalAAmt")), to_int(basic.get("overHeadCostAmount")),
                 basic.get("openBidDateTime"), None if revision is None else str(revision), notice_no))
-    # 공사/용역 구분·사정액: 공식 API 값이 우선, 없을 때(--srm-list 로 받은 공고)만 SRM 상세로 채운다
+    # 공사/용역 구분·사정액·발주부서: 공식 API 값이 우선, 없을 때(--srm-list 로 받은 공고)만 SRM 상세로 채운다
     db.execute("""UPDATE bid_notice SET item_type=COALESCE(item_type, ?),
-                  approximate_amount=COALESCE(approximate_amount, ?) WHERE notice_no=?""",
-               (basic.get("itemType"), to_int(basic.get("approximateAmount")), notice_no))
+                  approximate_amount=COALESCE(approximate_amount, ?),
+                  place_name=COALESCE(NULLIF(place_name, ''), ?) WHERE notice_no=?""",
+               (basic.get("itemType"), to_int(basic.get("approximateAmount")), srm_place_name(basic), notice_no))
     evals ={k: basic.get(camel(k)) for k in EVAL_KEYS}
     raw = {"search": sanitize({k: row.get(k) for k in ("announceNo", "areaCodeName", "limitedReasonCode")}),
            "basic": {camel(k): v for k, v in evals.items()}, "items": sanitize(items)}
@@ -484,6 +485,13 @@ def fetch_list(api_key, begin, end):
         except Exception as exc:
             failed.append(f"{b}~{e}: {type(exc).__name__}: {str(exc)[:120]}")
     return rows, failed
+
+
+def srm_place_name(basic):
+    """SRM 상세 → 공식 API placeName 모양 ('경기본부' + '기획관리실' → '경기본부 기획관리실', '경영지원처'+'경영지원처' → '경영지원처').
+    공식 API 값이 있는 공고 10건으로 같은 값인지 확인함 (2026-11-26)"""
+    unit, place = basic.get("operatingUnitName"), basic.get("placeName")
+    return (unit if place in (None, "", unit) else f"{unit} {place}") if unit else (place or None)
 
 
 def srm_list_row(r):
