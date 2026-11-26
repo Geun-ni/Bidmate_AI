@@ -154,6 +154,15 @@ python -m backend.db.fix_license_main             # 미리보기 (DB 변경 없�
 python -m backend.db.fix_license_main --apply     # 백업 후 한 트랜잭션으로 반영
 ```
 
+### 발주부서 채우기 (2026-11-26)
+
+`--srm-list`로 받은 공고는 공식 API 목록을 거치지 않아 `bid_notice.place_name`이 비어 있었다. SRM 상세 기본정보(`operatingUnitName` + `placeName`)로 공식 API와 같은 모양(예: `경기본부 기획관리실`)을 만들어 빈 공고만 채운다. 공고 1건당 SRM 요청 1~2번. 이후 수집부터는 SRM 상세 수집 때 같이 채운다.
+
+```bash
+python -m backend.db.fill_place_name             # 미리보기 (DB 변경 없음)
+python -m backend.db.fill_place_name --apply     # 백업 후 반영
+```
+
 ### 첨부 본문 재파싱 (2026-11-21)
 
 `doc_reader.py`를 전처리 파서(v2)로 바꿨다. 표는 `칸1 | 칸2` 행으로, 수식·그림은 나온 자리에 `[수식: …]`·`[이미지 BIN0001.bmp]`로, 글자로 친 분수는 `(분자/분모)`로 합치고, HWP 전용 가로선·막대 문자는 지우고 기호 글꼴 글머리는 일반 기호로 바꾼다. 띄어쓰기는 지우지 않는다(겹친 빈칸만 한 칸으로). 이미 받은 원본을 다시 읽으므로 SRM 요청은 없다.

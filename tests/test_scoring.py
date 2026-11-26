@@ -467,6 +467,13 @@ class LlmEvaluationTargetTest(unittest.TestCase):
 class SrmListRowTest(unittest.TestCase):
     """--srm-list: SRM 목록 행을 공식 API 행 모양으로 바꾼다 (취소 공고는 진행 중이 아님)"""
 
+    def test_place_name(self):  # 공식 API placeName 과 같은 모양
+        from backend.collector.collect import srm_place_name
+        self.assertEqual(srm_place_name({"operatingUnitName": "경기본부", "placeName": "기획관리실"}), "경기본부 기획관리실")
+        self.assertEqual(srm_place_name({"operatingUnitName": "경영지원처", "placeName": "경영지원처"}), "경영지원처")
+        self.assertEqual(srm_place_name({"operatingUnitName": "남부건설본부"}), "남부건설본부")
+        self.assertIsNone(srm_place_name({}))
+
     def test_row(self):
         from backend.collector.collect import in_scope, is_open, srm_list_row
         r = {"announceNo": "E012608290", "announceName": "테스트 공사", "rfxType": "ServiceBid",

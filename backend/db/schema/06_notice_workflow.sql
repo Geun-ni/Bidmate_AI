@@ -85,3 +85,24 @@ CREATE TABLE IF NOT EXISTS notice_notification (
     created_at   TEXT NOT NULL,
     UNIQUE (user_id, notice_no, channel, reason)
 );
+
+-- 베타 의견 (POST /api/feedback): general=의견 보내기, reaction=👍👎, survey=베타 설문.
+-- user_id 는 로그인 세션 기준 (화면이 보낸 context 의 user_id 는 믿지 않는다). 첨부 이미지는 원본 바이트(최대 3MB)
+CREATE TABLE IF NOT EXISTS beta_feedback (
+    id               INTEGER PRIMARY KEY,
+    kind             TEXT NOT NULL CHECK (kind IN ('general', 'reaction', 'survey')),
+    user_id          TEXT REFERENCES app_user(user_id) ON DELETE SET NULL,
+    notice_no        TEXT,                  -- context.notice_no (공고가 지워져도 의견은 남긴다)
+    category         TEXT CHECK (category IN ('BUG', 'INCONVENIENT', 'IDEA', 'GOOD')),
+    target           TEXT CHECK (target IN ('judgment', 'score', 'qna')),
+    ref_id           TEXT,
+    value            TEXT CHECK (value IN ('up', 'down')),
+    message          TEXT,                  -- general 내용 / reaction 이유 한 줄
+    email            TEXT,
+    payload          TEXT,                  -- survey answers 또는 reaction extra (JSON)
+    context          TEXT,                  -- 보던 화면·브라우저 등 (JSON)
+    attachment_name  TEXT,
+    attachment_type  TEXT,
+    attachment_data  BLOB,
+    created_at       TEXT NOT NULL
+);
