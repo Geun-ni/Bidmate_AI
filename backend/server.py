@@ -144,8 +144,12 @@ window.close();</script>""")
             case ("GET", ["api", "admin", "feedback"]):               # 베타 의견 목록 (관리자만, ?kind=&limit=&offset=)
                 return (lambda db, b: feedback.list_feedback(
                     db, user, {k: q(k) for k in feedback.LIST_FILTERS}, q("limit") or 50, q("offset") or 0)), True
+            case ("GET", ["api", "admin", "feedback", "export"]):     # 의견 CSV 내려받기 (목록과 같은 필터)
+                return (lambda db, b: feedback.export_csv(db, user, {k: q(k) for k in feedback.LIST_FILTERS})), True
             case ("GET", ["api", "admin", "feedback", fid]):          # 의견 1건 + 첨부 이미지 (관리자만)
                 return (lambda db, b: feedback.get_feedback(db, user, fid)), True
+            case ("PUT", ["api", "admin", "feedback", fid]):          # 처리 상태 {"status": NEW|CHECKED|DONE}
+                return (lambda db, b: feedback.set_status(db, user, fid, b)), True
             case ("GET", ["api", "auth", "me"]):                     # 로그인 안 했으면 {"user": null}
                 return (lambda db, b: {"user": user}), False
             case ("POST", ["api", "notices", no, "score"]):          # 예상 점수 계산 (저장 안 함)
@@ -262,6 +266,15 @@ window.close();</script>""")
             result = func(db, body)
             if result is None:
                 self.send_json(404, {"error": "찾을 수 없습니다."})
+            elif isinstance(result, tuple):  # (파일 이름, CSV 바이트) → 내려받기 (의견 CSV)
+                filename, data = result
+                self.send_response(200)
+                self.send_header("Content-Type", "text/csv; charset=utf-8")
+                self.send_header("Content-Disposition", f"attachment; filename*=UTF-8''{quote(filename)}")
+                self.send_header("Content-Length", str(len(data)))
+                self.send_header("Cache-Control", "no-store")
+                self.end_headers()
+                self.wfile.write(data)
             else:
                 self.send_json(201 if method == "POST" and parts[1] == "companies" else 200, result)
         except PermissionError as exc:  # 관리자 전용 (feedback 조회)
