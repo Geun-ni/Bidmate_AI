@@ -48,7 +48,7 @@ Invoke-Remote ('cd /opt/bidmate/app && sudo -u bidmate git fetch -q origin main 
 # 원격 MCP 는 서비스가 등록돼 있을 때만 (deploy/bidmate-mcp.service)
 Invoke-Remote ('if [ -f /etc/systemd/system/bidmate-mcp.service ]; then cd /opt/bidmate/app && ' +
                '/opt/bidmate/venv/bin/pip install -q -r bidmate_mcp/requirements.txt && ' +
-               'systemctl restart bidmate-mcp && sleep 2 && echo "mcp: $(systemctl is-active bidmate-mcp)"; fi')
+               'systemctl restart bidmate-mcp && sleep 2 && echo mcp: $(systemctl is-active bidmate-mcp); fi')
 
 if (-not $SkipFrontend) {
     Write-Host "3. 화면 빌드 후 올리기"
