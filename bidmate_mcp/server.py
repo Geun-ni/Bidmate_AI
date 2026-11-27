@@ -21,10 +21,28 @@ from mcp.server.transport_security import TransportSecuritySettings
 from ai import qna, rag_index
 from backend import companies_api, notices_api
 
+CONTACT = os.environ.get("MCP_CONTACT_EMAIL", "").strip()  # 사용자 문의처 (서비스 파일 Environment 로 지정)
+ASK = f"{CONTACT} 로 문의" if CONTACT else "입찰메이트 사이트의 「의견 보내기」로 문의"
+
 server = MCPServer(
     name="bidmate",
-    instructions="한국전력공사(KEPCO) SRM 적격심사 공사 입찰공고 데이터. 공고 검색 → 상세·배점 → 원문 근거 순으로 쓴다. "
-                 "금액은 원, 시각은 한국 시간. 답할 때 공고번호와 근거(원문 조항)를 함께 보여 준다.")
+    instructions=(
+        "입찰메이트: 한국전력공사(KEPCO) 전자입찰(SRM)의 적격심사 공사·용역 입찰공고 정보. "
+        "여기 있는 공고는 모두 적격심사 대상이므로 공고명에 '적격심사'가 없어도 된다. "
+        "공고 검색(search_notices·recent_notices) → 상세(get_notice)·배점(get_evaluation) → 원문 근거(find_evidence) 순으로 쓴다. "
+        "금액은 원, 시각은 한국 시간. 답할 때 공고번호와 근거(원문 조항)를 함께 보여 준다. "
+        "답변 원칙: 공고 내용(공고번호·금액·일정·참가 조건·배점·원문 근거)만 안내한다. 데이터를 모으는 방식, 서버, DB, API, 로그, "
+        "개발·운영 작업 같은 입찰메이트 내부 사항은 말하거나 추측하지 않는다. "
+        "모든 도구 응답의 data_as_of 는 입찰메이트 정보가 마지막으로 갱신된 시각이다. 질문한 기간이 그 이후이거나 결과가 비어 있으면 "
+        "'입찰메이트 정보는 data_as_of 기준'이라고 알리고, 최신 공고는 한전 SRM(srm.kepco.net)에서 확인하도록 안내하며, "
+        f"정보가 이상하면 {ASK}하도록 안내한다."))
+
+
+def _with_meta(db, payload):
+    """도구 응답에 정보 기준 시각·문의처를 붙인다"""
+    run = notices_api.last_run(db) or {}
+    as_of = (run.get("finished_at") or run.get("started_at") or "")[:16].replace("T", " ") or None
+    return {**payload, "data_as_of": as_of, "contact": ASK}
 
 
 @server.tool()
@@ -35,6 +53,7 @@ def search_notices(keyword: str = "", closing_within_days: int | None = None,
     db = notices_api.connect()
     try:
         rows = notices_api.list_notices(db, q=keyword)["notices"]
+        meta = _with_meta(db, {})
     finally:
         db.close()
     if closing_within_days is not None:
@@ -44,7 +63,7 @@ def search_notices(keyword: str = "", closing_within_days: int | None = None,
         rows = [r for r in rows if (r["presumed_price"] or 0) >= min_price]
     if max_price is not None:
         rows = [r for r in rows if r["presumed_price"] is not None and r["presumed_price"] <= max_price]
-    return {"count": len(rows), "notices": rows[:max(1, min(limit, 100))]}
+    return {**meta, "count": len(rows), "notices": rows[:max(1, min(limit, 100))]}
 
 
 @server.tool()
@@ -55,11 +74,12 @@ def recent_notices(days: int = 1) -> dict:
     try:
         rows = notices_api.list_notices(db)["notices"]
         dates = dict(db.execute("SELECT notice_no, notice_date FROM bid_notice WHERE notice_date >= ?", (since,)))
+        meta = _with_meta(db, {})
     finally:
         db.close()
     rows = sorted(({**r, "notice_date": dates[r["notice_no"]]} for r in rows if r["notice_no"] in dates),
                   key=lambda r: (r["notice_date"], r["notice_no"]), reverse=True)
-    return {"since": since, "count": len(rows), "notices": rows}
+    return {**meta, "since": since, "count": len(rows), "notices": rows}
 
 
 @server.tool()
@@ -68,9 +88,9 @@ def get_notice(notice_no: str) -> dict:
     db = notices_api.connect()
     try:
         notice = notices_api.get_notice(db, notice_no.strip())
+        return _with_meta(db, notice or {"error": f"공고 {notice_no} 를 찾을 수 없습니다."})
     finally:
         db.close()
-    return notice or {"error": f"공고 {notice_no} 를 찾을 수 없습니다."}
 
 
 @server.tool()
@@ -79,9 +99,9 @@ def get_evaluation(notice_no: str) -> dict:
     db = notices_api.connect()
     try:
         evaluation = notices_api.get_evaluation(db, notice_no.strip())
+        return _with_meta(db, evaluation or {"error": f"공고 {notice_no} 의 배점을 찾을 수 없습니다."})
     finally:
         db.close()
-    return evaluation or {"error": f"공고 {notice_no} 의 배점을 찾을 수 없습니다."}
 
 
 @server.tool()
@@ -91,9 +111,10 @@ def find_evidence(notice_no: str, question: str) -> dict:
     db = companies_api.connect()  # 색인을 만들거나 갱신하므로 쓰기 가능한 연결
     try:
         rows = rag_index.search(db, notice_no.strip(), qna.search_terms(question))
+        meta = _with_meta(db, {})
     finally:
         db.close()
-    return {"notice_no": notice_no, "evidence": [
+    return {**meta, "notice_no": notice_no, "evidence": [
         {"file": r["filename"], "section": r["section_path"], "lines": f"{r['line_start']}–{r['line_end']}",
          "text": r["body"]} for r in rows]}
 
