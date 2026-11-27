@@ -10,21 +10,45 @@ DB 는 백엔드와 같은 파일 (BIDMATE_DB → .env → 저장소 루트 bidm
 원격 MCP 는 nginx 가 넘겨 주는 Host 만 받는다 (MCP_ALLOWED_HOSTS, 쉼표로 여러 개).
 
 원문 근거 도구는 처음 묻는 공고의 본문을 검색 색인(rag_chunk)에 넣는다 (챗봇과 같은 색인).
+답변 평가: show_rating 이 Claude 대화창에 👍👎 위젯(MCP Apps, rating.html)을 띄우고, 누르면 send_feedback 이
+사이트 챗봇 평가와 같은 beta_feedback 에 저장한다 (kind=reaction, target=qna, extra.channel=mcp).
+위젯을 못 띄우는 앱이면 Claude 가 글로 묻고 send_feedback 을 부른다.
 """
 import argparse
 import os
 from datetime import datetime, timedelta
+from pathlib import Path
+from typing import Literal
 
 from mcp.server import MCPServer
+from mcp.server.apps import Apps, Context, client_supports_apps
 from mcp.server.transport_security import TransportSecuritySettings
 
 from ai import qna, rag_index
-from backend import companies_api, notices_api
+from backend import companies_api, feedback, notices_api
 
 CONTACT = os.environ.get("MCP_CONTACT_EMAIL", "").strip()  # 사용자 문의처 (서비스 파일 Environment 로 지정)
 ASK = f"{CONTACT} 로 문의" if CONTACT else "입찰메이트 사이트의 「의견 보내기」로 문의"
 
+RATING_URI = "ui://bidmate/rating.html"
+apps = Apps()
+
+
+@apps.tool(resource_uri=RATING_URI, name="show_rating",
+           description="입찰메이트 도구로 답변을 마칠 때마다 한 번 호출한다. 대화창에 '답변이 도움이 됐나요? 👍👎' 평가 칸을 띄운다. "
+                       "question: 사용자의 질문을 한 줄로 요약.")
+def show_rating(question: str, ctx: Context) -> str:
+    if client_supports_apps(ctx):
+        return "평가 칸을 표시했다. 사용자에게 따로 다시 묻지 않는다."
+    return ("이 앱은 평가 칸을 띄울 수 없다. 답변 끝에 '답변이 도움이 됐나요? (좋아요 / 아쉬워요)'라고 한 줄만 묻고, "
+            "사용자가 답하면 send_feedback 으로 보낸다. 아쉬워요면 무엇이 아쉬웠는지도 물어 comment 에 넣는다.")
+
+
+apps.add_html_resource(RATING_URI, (Path(__file__).with_name("rating.html")).read_text(encoding="utf-8"),
+                       name="bidmate_rating", title="답변 평가", prefers_border=True)
+
 server = MCPServer(
+    extensions=[apps],
     name="bidmate",
     instructions=(
         "입찰메이트: 한국전력공사(KEPCO) 전자입찰(SRM)의 적격심사 공사·용역 입찰공고 정보. "
@@ -35,7 +59,9 @@ server = MCPServer(
         "개발·운영 작업 같은 입찰메이트 내부 사항은 말하거나 추측하지 않는다. "
         "모든 도구 응답의 data_as_of 는 입찰메이트 정보가 마지막으로 갱신된 시각이다. 질문한 기간이 그 이후이거나 결과가 비어 있으면 "
         "'입찰메이트 정보는 data_as_of 기준'이라고 알리고, 최신 공고는 한전 SRM(srm.kepco.net)에서 확인하도록 안내하며, "
-        f"정보가 이상하면 {ASK}하도록 안내한다."))
+        f"정보가 이상하면 {ASK}하도록 안내한다. "
+        "입찰메이트 도구를 써서 답한 뒤에는 매번 마지막에 show_rating 을 한 번 호출한다. "
+        "send_feedback 은 사용자가 직접 평가했을 때만 부른다 (임의로 평가하지 않는다)."))
 
 
 def _with_meta(db, payload):
@@ -117,6 +143,22 @@ def find_evidence(notice_no: str, question: str) -> dict:
     return {**meta, "notice_no": notice_no, "evidence": [
         {"file": r["filename"], "section": r["section_path"], "lines": f"{r['line_start']}–{r['line_end']}",
          "text": r["body"]} for r in rows]}
+
+
+@server.tool()
+def send_feedback(value: Literal["up", "down"], question: str = "", comment: str = "") -> dict:
+    """사용자가 입찰메이트 답변을 평가했을 때만 호출한다 (평가 칸 또는 사용자가 직접 '좋아요/아쉬워요'라고 했을 때).
+    value: up(도움 됨) | down(아쉬움). question: 평가한 질문 요약. comment: 아쉬운 점."""
+    db = companies_api.connect()
+    try:
+        saved = feedback.save(db, {
+            "kind": "reaction", "target": "qna", "value": value,
+            "ref_id": f"mcp-{datetime.now():%Y%m%d%H%M%S}", "comment": comment.strip()[:500] or None,
+            "extra": {"channel": "mcp", "question": question.strip()[:300] or None},
+            "context": {"page": "mcp"}})
+    finally:
+        db.close()
+    return {"ok": True, "id": saved["id"], "message": "의견이 입찰메이트에 전달됐습니다. 고맙습니다."}
 
 
 def main():

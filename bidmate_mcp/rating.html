@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>답변 평가</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: var(--color-background-primary, light-dark(#ffffff, #1f1f1f));
+    --fg: var(--color-text-primary, light-dark(#1a1a1a, #f2f2f2));
+    --muted: var(--color-text-secondary, light-dark(#666666, #a8a8a8));
+    --line: var(--color-border-primary, light-dark(#d9d9d9, #3a3a3a));
+    --accent: light-dark(#1f6feb, #5b9bff);
+    --radius: var(--border-radius-md, 8px);
+  }
+  html, body { margin: 0; background: transparent; color: var(--fg);
+    font: 14px/1.5 var(--font-sans, system-ui, -apple-system, "Segoe UI", sans-serif); }
+  .box { padding: 12px 14px; }
+  .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .q { margin-right: auto; }
+  button { font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--line);
+    border-radius: var(--radius); padding: 6px 12px; cursor: pointer; min-height: 36px; }
+  button:hover:not(:disabled) { border-color: var(--accent); }
+  button:disabled { opacity: .55; cursor: default; }
+  button.on { border-color: var(--accent); }
+  textarea { box-sizing: border-box; width: 100%; margin-top: 10px; min-height: 64px; resize: vertical; font: inherit;
+    color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius); padding: 8px; }
+  .send { margin-top: 8px; display: flex; justify-content: flex-end; gap: 8px; }
+  .send .primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .msg { color: var(--muted); }
+  .err { color: var(--color-text-danger, #d1242f); margin-top: 6px; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<div class="box" id="box">
+  <div class="row" id="ask">
+    <span class="q">입찰메이트 답변이 도움이 됐나요?</span>
+    <button type="button" id="up" aria-label="도움이 됐어요">👍 좋아요</button>
+    <button type="button" id="down" aria-label="아쉬워요">👎 아쉬워요</button>
+  </div>
+  <div id="why" hidden>
+    <textarea id="comment" maxlength="500" placeholder="어떤 점이 아쉬웠나요? (예: 공고 정보가 달라요, 원하는 답이 아니에요)"></textarea>
+    <div class="send">
+      <button type="button" id="skip">그냥 보내기</button>
+      <button type="button" class="primary" id="send">보내기</button>
+    </div>
+  </div>
+  <div class="msg" id="done" hidden>의견 고맙습니다. 입찰메이트에 전달했어요.</div>
+  <div class="err" id="err" hidden></div>
+</div>
+<script>
+(() => {
+  // MCP Apps: 이 화면은 대화창 안 iframe. 부모(Claude)와 JSON-RPC 로 통신한다.
+  let nextId = 1, question = "";
+  const pending = new Map();
+  const $ = (id) => document.getElementById(id);
+
+  function request(method, params) {
+    const id = nextId++;
+    window.parent.postMessage({ jsonrpc: "2.0", id, method, params }, "*");
+    return new Promise((resolve, reject) => {
+      pending.set(id, { resolve, reject });
+      setTimeout(() => { if (pending.delete(id)) reject(new Error("응답이 없어요")); }, 20000);
+    });
+  }
+  const notify = (method, params) => window.parent.postMessage({ jsonrpc: "2.0", method, params }, "*");
+
+  window.addEventListener("message", (event) => {
+    if (event.source !== window.parent) return;
+    const m = event.data;
+    if (!m || m.jsonrpc !== "2.0") return;
+    if (m.id != null && pending.has(m.id)) {
+      const p = pending.get(m.id); pending.delete(m.id);
+      m.error ? p.reject(new Error(m.error.message || "오류")) : p.resolve(m.result);
+    } else if (m.method === "ui/notifications/tool-input") {
+      question = String(m.params?.arguments?.question || "").slice(0, 300);
+    }
+  });
+
+  // 크기 알리기 (호스트가 iframe 높이를 맞춘다)
+  const report = () => {  // 내용 높이 기준 (iframe 높이를 따라가지 않게 body 크기로 잰다)
+    const r = document.body.getBoundingClientRect();
+    notify("ui/notifications/size-changed", { width: Math.ceil(r.width), height: Math.ceil(r.height) });
+  };
+  new ResizeObserver(report).observe(document.body);
+
+  function lock(on) { for (const b of document.querySelectorAll("button")) b.disabled = on; }
+
+  async function send(value, comment) {
+    lock(true); $("err").hidden = true;
+    try {
+      const r = await request("tools/call",
+        { name: "send_feedback", arguments: { value, question, comment: comment || "" } });
+      if (r?.isError) throw new Error("저장하지 못했어요");
+      $("ask").hidden = true; $("why").hidden = true; $("done").hidden = false;
+    } catch (e) {
+      $("err").textContent = "보내지 못했어요. 잠시 후 다시 눌러 주세요."; $("err").hidden = false; lock(false);
+    }
+  }
+
+  $("up").onclick = () => send("up");
+  $("down").onclick = () => { $("down").classList.add("on"); $("why").hidden = false; $("comment").focus(); };
+  $("send").onclick = () => send("down", $("comment").value.trim());
+  $("skip").onclick = () => send("down", "");
+
+  request("ui/initialize", {
+    appInfo: { name: "bidmate-rating", version: "1.0.0" },
+    appCapabilities: {},
+    protocolVersion: "2026-01-26",
+  }).then(() => { notify("ui/notifications/initialized", {}); report(); })
+    .catch(() => { notify("ui/notifications/initialized", {}); report(); });
+})();
+</script>
+</body>
+</html>
