@@ -10,24 +10,54 @@ DB 는 백엔드와 같은 파일 (BIDMATE_DB → .env → 저장소 루트 bidm
 원격 MCP 는 nginx 가 넘겨 주는 Host 만 받는다 (MCP_ALLOWED_HOSTS, 쉼표로 여러 개).
 
 원문 근거 도구는 처음 묻는 공고의 본문을 검색 색인(rag_chunk)에 넣는다 (챗봇과 같은 색인).
+답변 평가: 공고 검색·새 공고·상세 결과(와 사용자가 원할 때 show_rating)에 👍👎 위젯(MCP Apps, rating.html)이 붙고,
+누르면 send_feedback 이 사이트 챗봇 평가와 같은 beta_feedback 에 저장한다 (kind=reaction, target=qna, extra.channel=mcp).
+위젯을 못 띄우는 앱에서는 평가 칸 없이 결과만 나간다 (지시로 글 평가를 받는 방식은 Claude 가 따르지 않아 뺐다).
 """
 import argparse
 import os
 from datetime import datetime, timedelta
+from pathlib import Path
+from typing import Literal
 
 from mcp.server import MCPServer
+from mcp.server.apps import Apps, Context, client_supports_apps
 from mcp.server.transport_security import TransportSecuritySettings
 
 from ai import qna, rag_index
-from backend import companies_api, notices_api
+from backend import companies_api, feedback, notices_api
 
-server = MCPServer(
-    name="bidmate",
-    instructions="한국전력공사(KEPCO) SRM 적격심사 공사 입찰공고 데이터. 공고 검색 → 상세·배점 → 원문 근거 순으로 쓴다. "
-                 "금액은 원, 시각은 한국 시간. 답할 때 공고번호와 근거(원문 조항)를 함께 보여 준다.")
+CONTACT = os.environ.get("MCP_CONTACT_EMAIL", "").strip()  # 사용자 문의처 (서비스 파일 Environment 로 지정)
+ASK = f"{CONTACT} 로 문의" if CONTACT else "입찰메이트 사이트의 「의견 보내기」로 문의"
+
+RATING_URI = "ui://bidmate/rating.html"
+apps = Apps()
+rated = apps.tool(resource_uri=RATING_URI)  # 결과에 평가 칸이 붙는 도구 (위젯을 못 띄우는 앱에서는 평가 칸 없이 결과만)
 
 
-@server.tool()
+@apps.tool(resource_uri=RATING_URI, name="show_rating",
+           description="사용자가 답변을 평가하고 싶다고 할 때 호출한다. 대화창에 '답변이 도움이 되었나요? 👍👎' 평가 칸을 띄운다. "
+                       "question: 사용자의 질문을 한 줄로 요약.")
+def show_rating(question: str, ctx: Context) -> str:
+    if client_supports_apps(ctx):
+        return "평가 칸을 표시했다. 사용자에게 따로 다시 묻지 않는다."
+    return f"이 앱에서는 평가 칸을 띄울 수 없다. 의견은 {ASK}하도록 안내한다."
+
+
+apps.add_html_resource(RATING_URI, (Path(__file__).with_name("rating.html")).read_text(encoding="utf-8"),
+                       name="bidmate_rating", title="답변 평가", prefers_border=True)
+
+
+
+
+def _with_meta(db, payload):
+    """도구 응답에 정보 기준 시각·문의처를 붙인다"""
+    run = notices_api.last_run(db) or {}
+    as_of = (run.get("finished_at") or run.get("started_at") or "")[:16].replace("T", " ") or None
+    return {**payload, "data_as_of": as_of, "contact": ASK}
+
+
+@rated
 def search_notices(keyword: str = "", closing_within_days: int | None = None,
                    min_price: int | None = None, max_price: int | None = None, limit: int = 20) -> dict:
     """진행 중인 공고를 찾는다. keyword: 공고명·공고번호 일부. closing_within_days: 참가신청 마감이 N일 안.
@@ -35,6 +65,7 @@ def search_notices(keyword: str = "", closing_within_days: int | None = None,
     db = notices_api.connect()
     try:
         rows = notices_api.list_notices(db, q=keyword)["notices"]
+        meta = _with_meta(db, {})
     finally:
         db.close()
     if closing_within_days is not None:
@@ -44,10 +75,10 @@ def search_notices(keyword: str = "", closing_within_days: int | None = None,
         rows = [r for r in rows if (r["presumed_price"] or 0) >= min_price]
     if max_price is not None:
         rows = [r for r in rows if r["presumed_price"] is not None and r["presumed_price"] <= max_price]
-    return {"count": len(rows), "notices": rows[:max(1, min(limit, 100))]}
+    return {**meta, "count": len(rows), "notices": rows[:max(1, min(limit, 100))]}
 
 
-@server.tool()
+@rated
 def recent_notices(days: int = 1) -> dict:
     """최근 N일 안에 새로 공고된(공고일 기준) 진행 중 공고. '오늘 새로 뜬 공고' 같은 질문에 쓴다. 공고일이 최근인 순."""
     since = (datetime.now() - timedelta(days=max(0, min(days, 30)))).strftime("%Y%m%d")
@@ -55,47 +86,81 @@ def recent_notices(days: int = 1) -> dict:
     try:
         rows = notices_api.list_notices(db)["notices"]
         dates = dict(db.execute("SELECT notice_no, notice_date FROM bid_notice WHERE notice_date >= ?", (since,)))
+        meta = _with_meta(db, {})
     finally:
         db.close()
     rows = sorted(({**r, "notice_date": dates[r["notice_no"]]} for r in rows if r["notice_no"] in dates),
                   key=lambda r: (r["notice_date"], r["notice_no"]), reverse=True)
-    return {"since": since, "count": len(rows), "notices": rows}
+    return {**meta, "since": since, "count": len(rows), "notices": rows}
 
 
-@server.tool()
+@rated
 def get_notice(notice_no: str) -> dict:
     """공고 1건 상세: 발주부서, 추정가격·A값·사정액, 일정, 면허·지역 등 참가 제한 조건, 첨부 문서."""
     db = notices_api.connect()
     try:
         notice = notices_api.get_notice(db, notice_no.strip())
+        return _with_meta(db, notice or {"error": f"공고 {notice_no} 를 찾을 수 없습니다."})
     finally:
         db.close()
-    return notice or {"error": f"공고 {notice_no} 를 찾을 수 없습니다."}
 
 
-@server.tool()
 def get_evaluation(notice_no: str) -> dict:
     """공고 1건의 적격심사 배점표: 항목별 배점, 산식, 통과점수. 규칙으로 못 읽은 항목은 '확인 필요'."""
     db = notices_api.connect()
     try:
         evaluation = notices_api.get_evaluation(db, notice_no.strip())
+        return _with_meta(db, evaluation or {"error": f"공고 {notice_no} 의 배점을 찾을 수 없습니다."})
     finally:
         db.close()
-    return evaluation or {"error": f"공고 {notice_no} 의 배점을 찾을 수 없습니다."}
 
 
-@server.tool()
 def find_evidence(notice_no: str, question: str) -> dict:
     """공고문·적격심사기준 원문에서 질문과 관련된 조항을 최대 3개 찾는다 (예: '실적증명서 제출', '공동수급').
     해석은 하지 않고 원문 조각과 위치(파일·조항·줄)만 준다."""
     db = companies_api.connect()  # 색인을 만들거나 갱신하므로 쓰기 가능한 연결
     try:
         rows = rag_index.search(db, notice_no.strip(), qna.search_terms(question))
+        meta = _with_meta(db, {})
     finally:
         db.close()
-    return {"notice_no": notice_no, "evidence": [
+    return {**meta, "notice_no": notice_no, "evidence": [
         {"file": r["filename"], "section": r["section_path"], "lines": f"{r['line_start']}–{r['line_end']}",
          "text": r["body"]} for r in rows]}
+
+
+def send_feedback(value: Literal["up", "down"], question: str = "", comment: str = "") -> dict:
+    """사용자가 입찰메이트 답변을 평가했을 때만 호출한다 (평가 칸 또는 사용자가 직접 '좋아요/아쉬워요'라고 했을 때).
+    value: up(도움 됨) | down(아쉬움). question: 평가한 질문 요약. comment: 아쉬운 점."""
+    db = companies_api.connect()
+    try:
+        saved = feedback.save(db, {
+            "kind": "reaction", "target": "qna", "value": value,
+            "ref_id": f"mcp-{datetime.now():%Y%m%d%H%M%S}", "comment": comment.strip()[:500] or None,
+            "extra": {"channel": "mcp", "question": question.strip()[:300] or None},
+            "context": {"page": "mcp"}})
+    finally:
+        db.close()
+    return {"ok": True, "id": saved["id"], "message": "의견이 입찰메이트에 전달됐습니다. 고맙습니다."}
+
+
+server = MCPServer(
+    extensions=[apps],
+    name="bidmate",
+    instructions=(
+        "입찰메이트: 한국전력공사(KEPCO) 전자입찰(SRM)의 적격심사 공사·용역 입찰공고 정보. "
+        "여기 있는 공고는 모두 적격심사 대상이므로 공고명에 '적격심사'가 없어도 된다. "
+        "공고 검색(search_notices·recent_notices) → 상세(get_notice)·배점(get_evaluation) → 원문 근거(find_evidence) 순으로 쓴다. "
+        "금액은 원, 시각은 한국 시간. 답할 때 공고번호와 근거(원문 조항)를 함께 보여 준다. "
+        "답변 원칙: 공고 내용(공고번호·금액·일정·참가 조건·배점·원문 근거)만 안내한다. 데이터를 모으는 방식, 서버, DB, API, 로그, "
+        "개발·운영 작업 같은 입찰메이트 내부 사항은 말하거나 추측하지 않는다. "
+        "모든 도구 응답의 data_as_of 는 입찰메이트 정보가 마지막으로 갱신된 시각이다. 질문한 기간이 그 이후이거나 결과가 비어 있으면 "
+        "'입찰메이트 정보는 data_as_of 기준'이라고 알리고, 최신 공고는 한전 SRM(srm.kepco.net)에서 확인하도록 안내하며, "
+        f"정보가 이상하면 {ASK}하도록 안내한다. "
+        "공고 검색·상세 결과에는 대화창에 평가 칸(👍👎)이 자동으로 붙으므로 따로 평가를 묻지 않는다. "
+        "send_feedback 은 사용자가 직접 평가했을 때만 부른다 (임의로 평가하지 않는다)."))
+for _tool in (get_evaluation, find_evidence, send_feedback):  # 평가 칸 없이 쓰는 도구
+    server.tool()(_tool)
 
 
 def main():
